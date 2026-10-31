@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Store, money } from './store';
+import { useAuth } from './auth';
 
 const toastBus = new EventTarget();
 export const toast = msg => toastBus.dispatchEvent(new CustomEvent('t', { detail: msg }));
@@ -85,10 +86,11 @@ export function RatingSummary({ productId }) {
 
 /** Review list + form. productId: a product id, or null for general shop reviews. */
 export function Reviews({ productId = null, productName = '' }) {
+  const { user } = useAuth();
   const list = Store.reviews(productId);
   const { n, avg } = Store.rating(productId);
   const lastName = (() => { try { return localStorage.getItem('ddt.reviewer') || ''; } catch { return ''; } })();
-  const [f, setF] = useState({ name: lastName, rating: 5, text: '' });
+  const [f, setF] = useState({ name: user?.name || lastName, rating: 5, text: '' });
   const [sent, setSent] = useState(null);
 
   const submit = e => {

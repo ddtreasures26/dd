@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth';
 import { Store, money } from '../store';
 import { notify, toast } from '../ui';
 
 export default function Cart() {
   const nav = useNavigate();
+  const { enabled, user } = useAuth();
   const { courier } = Store.data.settings;
   const lines = Store.cart()
     .map(l => ({ ...l, p: Store.product(l.id) }))
@@ -13,7 +15,7 @@ export default function Cart() {
 
   const [mode, setMode] = useState('pickup');
   const [zone, setZone] = useState(0);
-  const [f, setF] = useState({ name: '', phone: '', address: '', city: '', pin: '', note: '' });
+  const [f, setF] = useState({ name: user?.name || '', phone: '', address: '', city: '', pin: '', note: '' });
   const set = k => e => setF({ ...f, [k]: e.target.value });
 
   const sync = next => Store.setCart(next.map(({ id, qty }) => ({ id, qty })));
@@ -37,7 +39,7 @@ export default function Cart() {
       date: new Date().toISOString(),
       items: lines.map(l => ({ id: l.id, name: l.p.name, price: Store.price(l.p), qty: l.qty })),
       subtotal, mode, courierZone: mode === 'courier' ? z?.name : '', courierCharge: shipping, total,
-      customer: { ...f }, status: 'Awaiting payment'
+      userEmail: user?.email || '', customer: { ...f }, status: 'Awaiting payment'
     };
     Store.setOrders([order, ...Store.orders()]);
     Store.setCart([]);
@@ -99,7 +101,9 @@ export default function Cart() {
           <div className="grand"><dt>Total</dt><dd>{money(total)}</dd></div>
         </dl>
         {mode === 'courier' && <p className="muted small">Courier charges depend on your location and will be confirmed with you once the order is confirmed.</p>}
-        <button className="btn block-btn">Place order</button>
+        {enabled && !user
+          ? <Link className="btn block-btn" to="/login?next=/cart">Sign in with Google to place order</Link>
+          : <button className="btn block-btn">Place order</button>}
       </form>
     </div>
   );

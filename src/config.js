@@ -1,4 +1,8 @@
 // Account that owns the shop data (products, images, orders) on Google Drive.
-// Drive sync + Google sign-in are not wired up yet; while testing, the admin
-// area is protected by the PIN in Settings (default 1234).
 export const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
+
+// Google OAuth Web client ID (public value). Set VITE_GOOGLE_CLIENT_ID in .env.local
+// for local work and in the Cloudflare build variables for production.
+// When empty the app runs in guest/test mode: no sign-in, admin protected by PIN.
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+export const AUTH_ENABLED = Boolean(GOOGLE_CLIENT_ID);

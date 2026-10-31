@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Store, fileToDataURL, money, useStore } from '../store';
 import { ADMIN_EMAIL } from '../config';
 import { Stars, toast } from '../ui';
+import { GoogleButton, useAuth } from '../auth';
 
 const TABS = [['products', '🛍️ Products'], ['categories', '🗂️ Categories'], ['home', '🏠 Home & promos'], ['shop', '🏪 Shop details'], ['courier', '📮 Courier'], ['orders', '📦 Orders'], ['reviews', '⭐ Reviews'], ['data', '💾 Backup']];
 
@@ -9,11 +10,25 @@ const save = () => { if (!Store.commit()) toast('Storage full – use smaller/fe
 
 export default function Admin() {
   useStore();
+  const auth = useAuth();
   const [ok, setOk] = useState(() => sessionStorage.getItem('ddt.admin') === '1');
   const [pin, setPin] = useState('');
   const [tab, setTab] = useState('products');
 
-  if (!ok) {
+  if (auth.enabled) {
+    if (!auth.user) {
+      return <div className="card login"><h1>Admin</h1><p className="muted">Sign in with the shop Google account.</p><GoogleButton /></div>;
+    }
+    if (!auth.isAdmin) {
+      return (
+        <div className="card login">
+          <h1>No access</h1>
+          <p className="muted">{auth.user.email} is not the admin account.</p>
+          <button className="btn ghost" onClick={auth.signOut}>Log out</button>
+        </div>
+      );
+    }
+  } else if (!ok) {
     return (
       <form className="card login" onSubmit={e => {
         e.preventDefault();
@@ -32,7 +47,7 @@ export default function Admin() {
     <div className="admin">
       <div className="row between">
         <h1>Admin</h1>
-        <button className="btn ghost small" onClick={() => { sessionStorage.removeItem('ddt.admin'); setOk(false); }}>Log out</button>
+        <button className="btn ghost small" onClick={() => { sessionStorage.removeItem('ddt.admin'); setOk(false); auth.signOut(); }}>Log out</button>
       </div>
       <div className="chips">
         {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}

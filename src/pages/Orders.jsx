@@ -1,13 +1,16 @@
 import { Link } from 'react-router-dom';
 import { Store, money } from '../store';
+import { useAuth } from '../auth';
 
 export default function Orders() {
-  const orders = Store.orders();
+  const { enabled, user } = useAuth();
+  if (enabled && !user) return <div className="empty"><p>Sign in to see your orders.</p><Link className="btn" to="/login?next=/orders">Sign in</Link></div>;
+  const orders = Store.orders().filter(o => (o.userEmail || '') === (user?.email || ''));
   if (!orders.length) return <div className="empty"><p>No orders yet.</p><Link className="btn" to="/">Shop now</Link></div>;
   return (
     <div className="orders">
       <h1>My orders</h1>
-      <p className="muted small">Saved on this device. (Sign-in will sync them across devices later.)</p>
+      <p className="muted small">Saved on this device for now; they will follow your Google account once cloud sync is on.</p>
       {orders.map(o => (
         <div className="card order" key={o.id}>
           <div className="row between">

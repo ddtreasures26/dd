@@ -8,6 +8,8 @@ import Cart from './pages/Cart';
 import Pay from './pages/Pay';
 import Orders from './pages/Orders';
 import Admin from './pages/Admin';
+import Login from './pages/Login';
+import { Avatar, useAuth } from './auth';
 import ReviewsPage from './pages/ReviewsPage';
 
 const THEMES = [
@@ -79,6 +81,7 @@ function SettingsMenu({ onClose, install }) {
 export default function App() {
   useStore();
   useTheme();
+  const { enabled, user } = useAuth();
   const install = useInstall();
   const [menu, setMenu] = useState(false);
   const [q, setQ] = useState('');
@@ -106,6 +109,9 @@ export default function App() {
           <NavLink to="/reviews" className="icon" title="Reviews">⭐</NavLink>
           <NavLink to="/orders" className="icon" title="My orders">📦</NavLink>
           <NavLink to="/cart" className="icon" title="Cart">🛍️{count > 0 && <i className="dot">{count}</i>}</NavLink>
+          {enabled && (user
+            ? <NavLink to="/login" className="icon" title={user.name}><Avatar user={user} size={28} /></NavLink>
+            : <NavLink to="/login" className="btn small signin">Sign in</NavLink>)}
           <button className="icon" title="Settings" onClick={() => setMenu(m => !m)}>⚙️</button>
           {menu && <SettingsMenu onClose={() => setMenu(false)} install={install} />}
         </nav>
@@ -117,6 +123,7 @@ export default function App() {
           <Route path="/product/:id" element={<Product />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/pay/:id" element={<Pay />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/reviews" element={<ReviewsPage />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/admin/*" element={<Admin />} />
@@ -130,7 +137,7 @@ export default function App() {
         <p>📍 {s.address}<br />📞 {s.phone}{s.email && <><br />✉️ {s.email}</>}</p>
         <p>
           {s.instagram && <a href={s.instagram} target="_blank" rel="noreferrer">Instagram</a>} ·{' '}
-          <Link to="/reviews">Reviews</Link> · <Link to="/admin">Admin</Link>
+          <Link to="/reviews">Reviews</Link> · <a href="privacy.html">Privacy policy</a> · <Link to="/admin">Admin</Link>
         </p>
         <small className="muted">© {new Date().getFullYear()} {s.shopName} · {s.tagline}</small>
       </footer>

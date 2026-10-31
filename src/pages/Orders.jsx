@@ -25,7 +25,7 @@ export default function Orders() {
   return (
     <div className="orders">
       <h1>My orders</h1>
-      <p className="muted small">{REMOTE ? 'Updates appear here and we email you when the status changes.' : 'Saved on this device for now; they will follow your Google account once cloud sync is on.'}</p>
+      <p className="muted small">{REMOTE ? 'Your order status updates here automatically.' : 'Saved on this device for now; they will follow your Google account once cloud sync is on.'}</p>
       {orders.map(o => (
         <article className="card order" key={o.id}>
           <div className="row between">

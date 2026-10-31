@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Avatar, useAuth } from '../auth';
 import { isStandalone, useInstall } from '../pwa';
 import { Store, money } from '../store';
+import { useOrderSync } from '../sync';
 import { toast } from '../ui';
 
 const THEMES = [['auto', '🌓 Auto'], ['light', '☀️ Light'], ['dark', '🌙 Dark'], ['rose', '🌸 Rose']];
@@ -10,6 +11,7 @@ const THEMES = [['auto', '🌓 Auto'], ['light', '☀️ Light'], ['dark', '🌙
 export default function Profile() {
   const { enabled, user, isAdmin, signOut } = useAuth();
   const inst = useInstall();
+  useOrderSync();
   const key = user?.email || 'guest';
   const [p, setP] = useState(() => Store.profile(key));
   const prefs = Store.prefs();
@@ -53,6 +55,18 @@ export default function Profile() {
         <div className="card stat"><b>{money(spent)}</b><small>Total spent</small></div>
         <Link to="/orders" className="card stat link-card"><b>→</b><small>View orders</small></Link>
       </section>
+
+      {mine.length > 0 && (
+        <section className="card">
+          <div className="row between"><h2>Recent orders</h2><Link to="/orders" className="small">See all</Link></div>
+          {mine.slice(0, 3).map(o => (
+            <Link key={o.id} to={`/order/${o.id}`} className="rowlink">
+              <span><b>{o.id}</b><br /><small className="muted">{money(o.total)} · {new Date(o.date).toLocaleDateString()}</small></span>
+              <span className={`pill ${o.status.replace(/\s/g, '').toLowerCase()}`}>{o.status}</span>
+            </Link>
+          ))}
+        </section>
+      )}
 
       <form className="card form" onSubmit={e => { e.preventDefault(); Store.setProfile(key, p); toast('Delivery details saved ✓'); }}>
         <h2>Delivery details</h2>

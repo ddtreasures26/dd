@@ -2,13 +2,12 @@
  * DD_Treasure26 backend: a Google Apps Script web app.
  * Runs as the shop's Google account, keeps all data in the Drive folder
  * "DDTreasure26-Data" (catalog.json, reviews.json, orders.json, images/),
- * verifies Google sign-in tokens, and emails customers/admin on order updates.
+ * and verifies Google sign-in tokens. It sends no email.
  * Setup: see backend/README.md
  */
 const CLIENT_ID = '566285685011-uok9mas25n93gjm55vmcdk23aq7bpcsg.apps.googleusercontent.com';
 const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
 const SHOP_NAME = 'DD_Treasure26';
-const SHOP_URL = 'https://dd.ddtreasures26.workers.dev/';
 const FOLDER_NAME = 'DDTreasure26-Data';
 const TZ = 'Asia/Kolkata';
 const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
@@ -47,7 +46,6 @@ function errOut_(err) {
   return { ok: false, code: err.code || 'server', error: err.code ? err.message : 'Something went wrong. Please try again.' };
 }
 function str_(v, max) { return String(v == null ? '' : v).trim().slice(0, max); }
-function money_(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
 
 function folder_(sub) {
   const props = PropertiesService.getScriptProperties();
@@ -111,14 +109,6 @@ function auth_(token) {
   return user;
 }
 
-function mail_(to, subject, html) {
-  try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: SHOP_NAME }); } catch (e) { /* quota or invalid address */ }
-}
-function itemsHtml_(o) {
-  return '<ul>' + o.items.map(function (i) { return '<li>' + esc_(i.name) + ' × ' + i.qty + ' — ' + money_(i.price * i.qty) + '</li>'; }).join('') + '</ul>';
-}
-function esc_(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-
 function nextOrderId_(orders) {
   const ymd = Utilities.formatDate(new Date(), TZ, 'yyMMdd');
   const n = orders.filter(function (o) { return o.id.indexOf(ymd) >= 0; }).length + 1;
@@ -170,10 +160,6 @@ const ACTIONS = {
     order.total = totalOf_(order);
     orders.unshift(order);
     write_('orders.json', orders);
-    mail_(ADMIN_EMAIL, 'New order ' + order.id + ' (' + money_(order.total) + ')',
-      '<p>' + esc_(customer.name) + ' (' + esc_(customer.phone) + ') placed an order.</p>' + itemsHtml_(order) +
-      '<p>Total: <b>' + money_(order.total) + '</b>' + (mode === 'courier' ? ' (incl. estimated courier ' + money_(charge) + ')' : '') + '</p>' +
-      '<p><a href="' + SHOP_URL + '#/admin">Open admin</a></p>');
     return { order: order };
   } },
 
@@ -188,8 +174,6 @@ const ACTIONS = {
     if (o.status === 'Awaiting payment') {
       o.status = 'Payment sent'; o.history.push({ status: o.status, at: new Date().toISOString() });
       write_('orders.json', orders);
-      mail_(ADMIN_EMAIL, 'Payment sent for ' + o.id + ' (' + money_(o.total) + ')',
-        '<p>' + esc_(o.customer.name) + ' says they paid ' + money_(o.total) + '. Check your UPI app, then confirm the order.</p><p><a href="' + SHOP_URL + '#/admin">Open admin</a></p>');
     }
     return { order: o };
   } },
@@ -257,15 +241,13 @@ const ACTIONS = {
     const orders = read_('orders.json', []);
     const o = orders.filter(function (x) { return x.id === b.id; })[0];
     if (!o) throw fail_('not_found', 'Order not found.');
-    let chargeChanged = false, products = null;
+    let products = null;
 
     if (b.courierCharge != null) {
       const c = Math.round(Number(b.courierCharge));
       if (o.mode !== 'courier' || !(c >= 0)) throw fail_('bad_request', 'Invalid courier charge.');
-      chargeChanged = c !== o.courierCharge;
       o.courierCharge = c; o.total = totalOf_(o);
     }
-    let statusChanged = false;
     if (b.status && b.status !== o.status) {
       if (STATUSES.indexOf(b.status) < 0) throw fail_('bad_request', 'Unknown status.');
       const holds = STOCK_STATUSES.indexOf(b.status) >= 0;
@@ -281,25 +263,11 @@ const ACTIONS = {
         products = (catalog.products || []).map(function (p) { return { id: p.id, qty: p.qty }; });
         bust_();
       }
-      o.status = b.status; statusChanged = true;
+      o.status = b.status;
       o.history.push({ status: o.status, at: new Date().toISOString() });
     }
     write_('orders.json', orders);
 
-    if (statusChanged || chargeChanged) {
-      const link = '<p><a href="' + SHOP_URL + '#/order/' + o.id + '">View your order</a></p>';
-      const msg = {
-        'Payment sent': 'We have noted your payment and will confirm it shortly.',
-        'Confirmed': 'Your order is confirmed. We are getting it ready with love.',
-        'Shipped': 'Your order has been shipped.',
-        'Delivered': 'Your order has been delivered. We hope you love it! Please leave us a review.',
-        'Cancelled': 'Your order has been cancelled. Contact us if this was a mistake.'
-      }[o.status] || '';
-      mail_(o.userEmail, '[' + SHOP_NAME + '] Order ' + o.id + (statusChanged ? ' is ' + o.status : ' updated'),
-        '<p>Hi ' + esc_(o.customer.name) + ',</p>' + (statusChanged ? '<p>' + msg + '</p>' : '') +
-        (chargeChanged ? '<p>Courier charge confirmed: <b>' + money_(o.courierCharge) + '</b>. New total: <b>' + money_(o.total) + '</b>.</p>' : '') +
-        itemsHtml_(o) + link + '<p>— ' + SHOP_NAME + '</p>');
-    }
     return { order: o, products: products || [] };
   } }
 };

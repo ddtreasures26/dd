@@ -333,7 +333,7 @@ function AdminOrders() {
     try {
       const r = await api.updateOrder(await getToken(), o.id, p);
       Store.applyAdminOrder(r.order, r.products);
-      toast(p.status === 'Confirmed' ? 'Confirmed – stock updated, customer emailed ✓' : 'Updated ✓');
+      toast(p.status === 'Confirmed' ? 'Confirmed – stock updated ✓' : 'Updated ✓');
     } catch (e) { toast(e.message); }
   };
 
@@ -341,7 +341,7 @@ function AdminOrders() {
     <>
       <div className="row between">
         <p className="muted small" style={{ margin: 0 }}>
-          {REMOTE ? 'Live from Drive. Confirming an order reduces stock and emails the customer.' : 'Orders placed on this device (connect the backend to receive customers\' orders here).'}
+          {REMOTE ? 'Live from Drive. Confirming an order reduces stock and updates the order status shown to the customer.' : 'Orders placed on this device (connect the backend to receive customers\' orders here).'}
         </p>
         {REMOTE && <button className="btn small ghost" onClick={() => Store.loadAdminData().then(() => toast('Refreshed')).catch(e => toast(e.message))}>Refresh</button>}
       </div>

@@ -56,11 +56,12 @@ export default function Invoice() {
           <thead><tr><th>Item</th><th className="r">Price</th><th className="r">Qty</th><th className="r">Amount</th></tr></thead>
           <tbody>
             {o.items.map((i, k) => (
-              <tr key={k}><td>{i.name}</td><td className="r">{money(i.price)}</td><td className="r">{i.qty}</td><td className="r">{money(i.price * i.qty)}</td></tr>
+              <tr key={k}><td>{i.name}{i.variant && <small className="muted"><br />{i.variant}</small>}</td><td className="r">{money(i.price)}</td><td className="r">{i.qty}</td><td className="r">{money(i.price * i.qty)}</td></tr>
             ))}
           </tbody>
           <tfoot>
             <tr><td colSpan="3" className="r">Items</td><td className="r">{money(o.subtotal)}</td></tr>
+            {o.discount > 0 && <tr><td colSpan="3" className="r">Coupon {o.coupon?.code}</td><td className="r">−{money(o.discount)}</td></tr>}
             {o.mode === 'courier' && <tr><td colSpan="3" className="r">Courier ({o.courierZone})</td><td className="r">{money(o.courierCharge)}</td></tr>}
             {o.giftFee > 0 && <tr><td colSpan="3" className="r">Gift wrap</td><td className="r">{money(o.giftFee)}</td></tr>}
             <tr className="grand"><td colSpan="3" className="r">Total</td><td className="r">{money(o.total)}</td></tr>

@@ -7,7 +7,7 @@ import { REMOTE } from '../api';
 
 export const reorder = (o, nav) => {
   let n = 0;
-  o.items.forEach(i => { if (Store.addToCart(i.id, i.qty)) n++; });
+  o.items.forEach(i => { if (Store.addToCart(i.id, i.qty, i.sel)) n++; });
   toast(n ? 'Items added to your cart' : 'Those items are unavailable now');
   if (n) nav('/cart');
 };

@@ -6,7 +6,7 @@ import { ADMIN_EMAIL } from '../config';
 import { Stars, notify, toast, Img } from '../ui';
 import { GoogleButton, useAuth } from '../auth';
 
-const TABS = [['products', '🛍️ Products'], ['categories', '🗂️ Categories'], ['home', '🏠 Home & promos'], ['shop', '🏪 Shop details'], ['courier', '📮 Courier'], ['orders', '📦 Orders'], ['analytics', '📊 Analytics'], ['reviews', '⭐ Reviews'], ['data', '💾 Backup']];
+const TABS = [['products', '🛍️ Products'], ['categories', '🗂️ Categories'], ['home', '🏠 Home & promos'], ['shop', '🏪 Shop details'], ['courier', '📮 Courier'], ['coupons', '🏷️ Coupons'], ['orders', '📦 Orders'], ['analytics', '📊 Analytics'], ['reviews', '⭐ Reviews'], ['data', '💾 Backup']];
 
 const save = async scope => {
   const ok = await Store.commit(scope);
@@ -86,6 +86,7 @@ export default function Admin() {
       {tab === 'home' && <HomeSettings />}
       {tab === 'shop' && <ShopSettings />}
       {tab === 'courier' && <Courier />}
+      {tab === 'coupons' && <Coupons />}
       {tab === 'orders' && <AdminOrders />}
       {tab === 'analytics' && <Analytics />}
       {tab === 'reviews' && <AdminReviews />}
@@ -95,6 +96,15 @@ export default function Admin() {
 }
 
 /* ---------- Products ---------- */
+const OPTION_PRESETS = [
+  { name: 'Ring size', values: '6, 7, 8, 9, 10, 11' },
+  { name: 'Bracelet size', values: 'S, M, L' },
+  { name: 'Colour', values: 'Gold, Silver, Rose gold' }
+];
+const parseOptions = list => (list || [])
+  .map(g => ({ name: g.name.trim(), values: [...new Set(g.valuesText.split(',').map(x => x.trim()).filter(Boolean))] }))
+  .filter(g => g.name && g.values.length);
+
 const blank = () => ({ id: '', name: '', category: Store.data.categories[0] || '', price: '', offerPrice: '', qty: 1, offer: false, images: [], description: '' });
 
 function Products() {
@@ -124,7 +134,7 @@ function Products() {
 }
 
 function ProductForm({ init, onDone }) {
-  const [p, setP] = useState(init);
+  const [p, setP] = useState(() => ({ ...init, options: (init.options || []).map(g => ({ name: g.name, valuesText: g.values.join(', ') })) }));
   const set = k => ev => setP({ ...p, [k]: ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value });
   const addImgs = async ev => {
     const urls = await Promise.all([...ev.target.files].map(f => fileToDataURL(f)));
@@ -133,7 +143,7 @@ function ProductForm({ init, onDone }) {
   };
   const submit = ev => {
     ev.preventDefault();
-    const clean = { ...p, id: p.id || Store.uid(), createdAt: p.createdAt || Date.now(), price: Number(p.price), offerPrice: Number(p.offerPrice) || 0, qty: Math.max(0, parseInt(p.qty) || 0) };
+    const clean = { ...p, id: p.id || Store.uid(), createdAt: p.createdAt || Date.now(), options: parseOptions(p.options), price: Number(p.price), offerPrice: Number(p.offerPrice) || 0, qty: Math.max(0, parseInt(p.qty) || 0) };
     if (!clean.images.length) clean.images = [Store.data.settings.logo];
     const list = Store.data.products;
     Store.data.products = list.some(x => x.id === clean.id) ? list.map(x => x.id === clean.id ? clean : x) : [clean, ...list];
@@ -155,6 +165,23 @@ function ProductForm({ init, onDone }) {
       <label className="switch"><input type="checkbox" checked={p.offer} onChange={set('offer')} /><span>Show in Offer zone</span></label>
       {p.offer && <label>Offer price (₹)<input type="number" min="0" value={p.offerPrice} onChange={set('offerPrice')} /></label>}
       <label>Description<textarea rows={4} value={p.description} onChange={set('description')} /></label>
+      <div className="sub">
+        <b>Options (optional)</b>
+        <p className="muted small" style={{ margin: 0 }}>For sizes or colours. The customer must pick one value from every group. Stock is shared by all options.</p>
+        {p.options.map((g, i) => (
+          <div className="optrow" key={i}>
+            <input placeholder="Option name, e.g. Ring size" value={g.name} onChange={e => setP({ ...p, options: p.options.map((x, k) => k === i ? { ...x, name: e.target.value } : x) })} />
+            <input placeholder="Values, separated by commas: 6, 7, 8" value={g.valuesText} onChange={e => setP({ ...p, options: p.options.map((x, k) => k === i ? { ...x, valuesText: e.target.value } : x) })} />
+            <button type="button" className="btn ghost small danger" aria-label="Remove option" onClick={() => setP({ ...p, options: p.options.filter((_, k) => k !== i) })}>×</button>
+          </div>
+        ))}
+        <div className="row">
+          {OPTION_PRESETS.map(pr => (
+            <button type="button" key={pr.name} className="btn ghost small" onClick={() => setP({ ...p, options: [...p.options, { name: pr.name, valuesText: pr.values }] })}>+ {pr.name}</button>
+          ))}
+          <button type="button" className="btn ghost small" onClick={() => setP({ ...p, options: [...p.options, { name: '', valuesText: '' }] })}>+ Custom</button>
+        </div>
+      </div>
       <label>Photos<input type="file" accept="image/*" multiple onChange={addImgs} /></label>
       <div className="thumbs">
         {p.images.map((s, i) => (
@@ -352,7 +379,7 @@ function AdminOrders() {
             {o.customer.name} · {o.customer.phone}{o.userEmail ? ` · ${o.userEmail}` : ''}
             {o.mode === 'courier' ? ` · ${o.customer.address}, ${o.customer.city} ${o.customer.pin}` : ' · pickup'}
           </small>
-          <ul>{o.items.map((i, k) => <li key={k}>{i.name} × {i.qty}</li>)}</ul>
+          <ul>{o.items.map((i, k) => <li key={k}>{i.name}{i.variant ? ` (${i.variant})` : ''} × {i.qty}</li>)}</ul>
           {o.giftWrap && <p className="notice small">🎁 Gift wrap{o.giftMessage ? `: “${o.giftMessage}”` : ''}</p>}
           {o.customer.note && <small className="muted">Note: {o.customer.note}</small>}
           {o.mode === 'courier' && <ChargeEditor key={o.courierCharge} o={o} onSave={c => patch(o, { courierCharge: c })} />}
@@ -513,6 +540,83 @@ function AdminReviews() {
         </div>
       ))}
       {!reviews.length && <div className="empty">No reviews yet.</div>}
+    </>
+  );
+}
+
+/* ---------- Coupons ---------- */
+const blankCoupon = () => ({ code: '', type: 'percent', value: '', minOrder: '', maxDiscount: '', expires: '', limit: '', active: true });
+const describeCoupon = c =>
+  `${c.type === 'percent' ? `${c.value}% off` : `${money(c.value)} off`}` +
+  (c.type === 'percent' && c.maxDiscount > 0 ? ` (max ${money(c.maxDiscount)})` : '') +
+  (c.minOrder > 0 ? ` · min order ${money(c.minOrder)}` : '') +
+  (c.expires ? ` · until ${c.expires}` : '');
+
+function Coupons() {
+  const list = Store.adminCoupons;
+  const [f, setF] = useState(blankCoupon());
+  const set = k => e => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+
+  if (!REMOTE) return <div className="notice">Coupons need the Drive backend (they are checked on the server so customers cannot fake them).</div>;
+
+  const persist = async next => {
+    Store.setCoupons(next);
+    const ok = await Store.commit('coupons');
+    toast(ok ? 'Coupons saved ✓' : (Store.lastError || 'Could not save coupons'));
+    if (!ok) await Store.loadAdminData().catch(() => {});
+  };
+  const add = e => {
+    e.preventDefault();
+    const code = f.code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 3) return toast('Use at least 3 letters or digits for the code');
+    if (list.some(c => c.code === code)) return toast('That code already exists');
+    persist([{ ...f, code, value: Number(f.value), minOrder: Number(f.minOrder) || 0, maxDiscount: Number(f.maxDiscount) || 0, limit: Math.floor(Number(f.limit)) || 0, used: 0, usedBy: [] }, ...list]);
+    setF(blankCoupon());
+  };
+
+  return (
+    <>
+      <form className="card form" onSubmit={add}>
+        <h2>New coupon</h2>
+        <div className="two">
+          <label>Code<input required minLength={3} maxLength={20} placeholder="DIWALI10" value={f.code} onChange={e => setF({ ...f, code: e.target.value.toUpperCase() })} /></label>
+          <label>Type
+            <select value={f.type} onChange={set('type')}>
+              <option value="percent">Percent off</option>
+              <option value="flat">Flat ₹ off</option>
+            </select>
+          </label>
+        </div>
+        <div className="two">
+          <label>{f.type === 'percent' ? 'Percent (1–100)' : 'Amount (₹)'}<input required type="number" min="1" max={f.type === 'percent' ? 100 : undefined} value={f.value} onChange={set('value')} /></label>
+          <label>Minimum order (₹)<input type="number" min="0" placeholder="0 = none" value={f.minOrder} onChange={set('minOrder')} /></label>
+        </div>
+        <div className="two">
+          {f.type === 'percent'
+            ? <label>Maximum discount (₹)<input type="number" min="0" placeholder="0 = no cap" value={f.maxDiscount} onChange={set('maxDiscount')} /></label>
+            : <span />}
+          <label>Total uses allowed<input type="number" min="0" placeholder="0 = unlimited" value={f.limit} onChange={set('limit')} /></label>
+        </div>
+        <label>Expires on (optional)<input type="date" value={f.expires} onChange={set('expires')} /></label>
+        <p className="muted small" style={{ margin: 0 }}>Each customer can use a code once. Discounts apply to the items only, not courier or gift wrap. Cancelled orders give the code back.</p>
+        <button className="btn">Add coupon</button>
+      </form>
+
+      {list.map(c => (
+        <div className="card order" key={c.code}>
+          <div className="row between">
+            <b className="code">{c.code}</b>
+            <span className={`pill ${c.active ? 'confirmed' : 'cancelled'}`}>{c.active ? 'Active' : 'Paused'}</span>
+          </div>
+          <span>{describeCoupon(c)}</span>
+          <small className="muted">Used {c.used || 0}{c.limit > 0 ? ` of ${c.limit}` : ''} time(s)</small>
+          <div className="row">
+            <button className="btn small ghost" onClick={() => persist(list.map(x => x.code === c.code ? { ...x, active: !x.active } : x))}>{c.active ? 'Pause' : 'Activate'}</button>
+            <button className="btn small ghost danger" onClick={() => { if (confirm(`Delete coupon ${c.code}?`)) persist(list.filter(x => x.code !== c.code)); }}>Delete</button>
+          </div>
+        </div>
+      ))}
+      {!list.length && <div className="empty">No coupons yet.</div>}
     </>
   );
 }

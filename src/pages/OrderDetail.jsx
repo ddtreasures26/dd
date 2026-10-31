@@ -16,13 +16,14 @@ export function OrderSummary({ o }) {
         return (
           <div className="line flat" key={k}>
             <Img src={p?.images[0] || Store.data.settings.logo} w={160} alt="" />
-            <div className="grow"><b>{i.name}</b><div className="muted small">{money(i.price)} × {i.qty}</div></div>
+            <div className="grow"><b>{i.name}</b>{i.variant && <div className="muted small">{i.variant}</div>}<div className="muted small">{money(i.price)} × {i.qty}</div></div>
             <b>{money(i.price * i.qty)}</b>
           </div>
         );
       })}
       <dl className="totals">
         <div><dt>Items</dt><dd>{money(o.subtotal)}</dd></div>
+        {o.discount > 0 && <div className="disc"><dt>Coupon {o.coupon?.code}</dt><dd>−{money(o.discount)}</dd></div>}
         {o.mode === 'courier' && <div><dt>Courier ({o.courierZone})</dt><dd>{money(o.courierCharge)}</dd></div>}
         {o.giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(o.giftFee)}</dd></div>}
         <div className="grand"><dt>Total</dt><dd>{money(o.total)}</dd></div>

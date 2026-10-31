@@ -52,8 +52,8 @@ const seed = () => ({
   products: [
     { id: 'p1', name: 'Pearl Heart Necklace', category: 'Necklaces', price: 349, offerPrice: 299, qty: 12, offer: true, images: [art('📿', '#fff1e6', '#f6c1cf')], description: 'Freshwater-look pearls with a tiny heart charm. Adjustable length.' },
     { id: 'p2', name: 'Pink Bow Hair Clip', category: 'Hair accessories', price: 129, offerPrice: 0, qty: 8, offer: false, images: [art('🎀', '#ffe3ec', '#f4a6bd')], description: 'Soft satin bow on a strong metal clip.' },
-    { id: 'p3', name: 'Pearl Charm Bracelet', category: 'Bracelets', price: 249, offerPrice: 0, qty: 20, offer: false, images: [art('🤍', '#f7ede2', '#e9d3b8')], description: 'Beaded bracelet with a dainty charm and gold-tone clasp.' },
-    { id: 'p4', name: 'Sparkle Ring Set', category: 'Rings', price: 399, offerPrice: 349, qty: 5, offer: true, images: [art('💍', '#fdeccf', '#f1c27d')], description: 'Set of three stackable rings with a crystal accent.' },
+    { id: 'p3', name: 'Pearl Charm Bracelet', category: 'Bracelets', price: 249, offerPrice: 0, qty: 20, offer: false, images: [art('🤍', '#f7ede2', '#e9d3b8')], options: [{ name: 'Size', values: ['S', 'M', 'L'] }], description: 'Beaded bracelet with a dainty charm and gold-tone clasp.' },
+    { id: 'p4', name: 'Sparkle Ring Set', category: 'Rings', price: 399, offerPrice: 349, qty: 5, offer: true, images: [art('💍', '#fdeccf', '#f1c27d')], options: [{ name: 'Ring size', values: ['6', '7', '8', '9', '10'] }], description: 'Set of three stackable rings with a crystal accent.' },
     { id: 'p5', name: 'Pearl Drop Earrings', category: 'Earrings', price: 199, offerPrice: 0, qty: 30, offer: false, images: [art('✨', '#fbe9f1', '#eab7cf')], description: 'Lightweight pearl drops, hypoallergenic hooks.' },
     { id: 'p6', name: 'Rose Gold Charm Bracelet', category: 'Bracelets', price: 299, offerPrice: 0, qty: 0, offer: false, images: [art('🌸', '#fde7e0', '#f2b5a4')], description: 'Currently sold out – ask on WhatsApp for a custom order.' }
   ]
@@ -76,6 +76,7 @@ let status = REMOTE ? 'loading' : 'ready'; // loading | ready | error
 let published = !REMOTE; // has the admin ever published a catalog to Drive?
 let lastError = '';
 let adminOrders = [];
+let adminCoupons = [];
 let tokenGetter = async () => { throw new Error('Please sign in.'); };
 
 const isInlineImage = v => typeof v === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(v);
@@ -111,6 +112,8 @@ export const Store = {
   get published() { return published; },
   get lastError() { return lastError; },
   get adminOrders() { return adminOrders; },
+  get adminCoupons() { return adminCoupons; },
+  setCoupons(list) { adminCoupons = list; emit(); },
   setTokenGetter(fn) { tokenGetter = fn; },
   setReviews(list) { data.reviews = list; Store.persist(); },
 
@@ -124,7 +127,8 @@ export const Store = {
     lastError = '';
     try {
       const token = await tokenGetter();
-      if (scope === 'reviews') await api.saveReviews(token, data.reviews);
+      if (scope === 'coupons') adminCoupons = (await api.saveCoupons(token, adminCoupons)).coupons;
+      else if (scope === 'reviews') await api.saveReviews(token, data.reviews);
       else {
         await uploadPending(token);
         Store.persist();
@@ -160,6 +164,7 @@ export const Store = {
   async loadAdminData() {
     const d = await api.adminData(await tokenGetter());
     adminOrders = d.orders;
+    adminCoupons = d.coupons || [];
     data.reviews = d.reviews;
     Store.persist();
     return d.orders;
@@ -197,14 +202,18 @@ export const Store = {
     return Store.persist();
   },
 
-  cart: () => read(CART, []), // [{id, qty}]
+  cart: () => read(CART, []), // [{id, qty, sel, label}]
   setCart(c) { write(CART, c); emit(); },
-  addToCart(id, n = 1) {
+  /** sel = chosen options, e.g. { 'Ring size': '7' }. Stock is shared by every option of a product. */
+  addToCart(id, n = 1, sel = {}) {
     const p = Store.product(id); if (!p) return false;
-    const c = Store.cart(); const line = c.find(l => l.id === id);
-    const next = Math.min(p.qty, (line?.qty || 0) + n);
+    const label = variantLabel(p, sel);
+    const c = Store.cart();
+    const others = c.filter(l => l.id === id && (l.label || '') !== label).reduce((a, l) => a + l.qty, 0);
+    const line = c.find(l => l.id === id && (l.label || '') === label);
+    const next = Math.min(p.qty - others, (line?.qty || 0) + n);
     if (next <= 0) return false;
-    if (line) line.qty = next; else c.push({ id, qty: next });
+    if (line) line.qty = next; else c.push({ id, qty: next, sel, label });
     Store.setCart(c); return true;
   },
 
@@ -247,6 +256,10 @@ export function fileToDataURL(file, max = 900, quality = 0.82) {
     r.readAsDataURL(file);
   });
 }
+
+/** "Ring size: 7, Colour: Gold" for the chosen options of a product ('' when it has none). */
+export const variantLabel = (p, sel) => (p.options || []).map(g => `${g.name}: ${sel?.[g.name]}`).join(', ');
+export const cartKey = l => `${l.id}|${l.label || ''}`;
 
 /** Rupees with Indian digit grouping: ₹1,23,456 (paise only when present). */
 export const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });

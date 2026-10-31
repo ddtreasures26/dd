@@ -11,8 +11,9 @@ export const orderText = (o, paid) => {
   return [
     `Hi DD_Treasure26! ${paid ? 'I have paid for' : 'Please confirm'} my order.`,
     `Order ID: ${o.id}`,
-    ...o.items.map(i => `• ${i.name} × ${i.qty} = ${money(i.price * i.qty)}`),
+    ...o.items.map(i => `• ${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.qty} = ${money(i.price * i.qty)}`),
     `Items: ${money(o.subtotal)}`,
+    ...(o.discount > 0 ? [`Coupon ${o.coupon?.code}: −${money(o.discount)}`] : []),
     o.mode === 'courier' ? `Courier (${o.courierZone}): ${money(o.courierCharge)} – to be confirmed` : 'Delivery: pickup / hand over',
     ...(o.giftWrap ? [`Gift wrap: ${money(o.giftFee)}${o.giftMessage ? ` — message: "${o.giftMessage}"` : ''}`] : []),
     `Total: ${money(o.total)}`,

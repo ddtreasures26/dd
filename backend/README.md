@@ -24,9 +24,11 @@ When you change `Code.gs` later: **Deploy → Manage deployments → ✏ Edit �
 | --- | --- |
 | Everyone | Read the catalog (products, categories, shop settings) and visible reviews |
 | Signed-in customer | Place an order (prices and stock are checked on the server), see their orders, mark payment sent, cancel an unpaid order, write a review |
-| Admin only | Save catalog, upload images to Drive, view all orders, change status, set the final courier charge, manage reviews |
+| Admin only | Save catalog, upload images to Drive, view all orders, change status, set the final courier charge, manage reviews, create coupons |
 
 - Every request is checked against Google (`tokeninfo`): the token must be issued for this app's client ID and the email must be verified. Admin actions need the email `ddtreasures26@gmail.com`.
+- Coupons live in `coupons.json`, which only the admin can read, so codes are never exposed. Each customer can use a code once; cancelling an order gives the code back.
+- Product options (sizes, colours) are validated on the server, and stock is shared by all options of a product.
 - Stock drops when an order is moved to **Confirmed** (and returns if it is later cancelled or moved back).
 - **No emails are sent.** Customers see their order status in the app (Profile and My orders); orders arrive in Admin → Orders and on WhatsApp.
 

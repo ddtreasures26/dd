@@ -9,12 +9,15 @@ export default function Product() {
   const p = Store.product(id);
   const [img, setImg] = useState(0);
   const [qty, setQty] = useState(1);
+  const [sel, setSel] = useState({});
 
-  useEffect(() => { if (p) Store.addRecent(p.id); setImg(0); setQty(1); }, [id]);
+  useEffect(() => { if (p) Store.addRecent(p.id); setImg(0); setQty(1); setSel({}); }, [id]);
 
   if (!p) return <div className="empty">Product not found. <Link to="/">Back to shop</Link></div>;
   const st = stockLabel(p);
-  const inCart = Store.cart().find(l => l.id === p.id)?.qty || 0;
+  const inCart = Store.cart().filter(l => l.id === p.id).reduce((a, l) => a + l.qty, 0);
+  const groups = p.options || [];
+  const missing = groups.find(g => !sel[g.name]);
   const room = p.qty - inCart;
 
   const url = `${location.origin}${location.pathname}#/product/${p.id}`;
@@ -23,7 +26,8 @@ export default function Product() {
   const share = () => (navigator.share ? navigator.share({ title: p.name, text, url }).catch(() => {}) : copy());
 
   const add = go => {
-    if (!Store.addToCart(p.id, qty)) return toast('Not enough stock');
+    if (missing) return toast(`Please choose ${missing.name.toLowerCase()}`);
+    if (!Store.addToCart(p.id, qty, sel)) return toast('Not enough stock');
     toast('Added to cart 🛍️');
     if (go) nav('/cart');
   };
@@ -45,6 +49,17 @@ export default function Product() {
         <Price p={p} />
         <p className={`stock ${st.cls}`}>{st.text}</p>
         <p className="desc">{p.description}</p>
+        {p.qty > 0 && room > 0 && groups.map(g => (
+          <div className="optgroup" key={g.name}>
+            <span className="lbl">{g.name}{sel[g.name] && <b>: {sel[g.name]}</b>}</span>
+            <div className="optvals" role="radiogroup" aria-label={g.name}>
+              {g.values.map(v => (
+                <button type="button" key={v} role="radio" aria-checked={sel[g.name] === v}
+                  className={`optval${sel[g.name] === v ? ' on' : ''}`} onClick={() => setSel({ ...sel, [g.name]: v })}>{v}</button>
+              ))}
+            </div>
+          </div>
+        ))}
         {p.qty > 0 && room > 0 && (
           <div className="row">
             <div className="qty">

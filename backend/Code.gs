@@ -1,14 +1,14 @@
 /**
  * DD_Treasure26 backend: a Google Apps Script web app.
  * Runs as the shop's Google account, keeps all data in the Drive folder
- * "DDTreasure26-Data" (catalog.json, reviews.json, orders.json, images/),
- * and verifies Google sign-in tokens. It sends no email.
+ * "DDTreasure26-Data" (catalog.json, reviews.json, orders.json, coupons.json,
+ * images/), and verifies Google sign-in tokens. It sends no email.
  * Setup: see backend/README.md
  */
 const CLIENT_ID = '566285685011-uok9mas25n93gjm55vmcdk23aq7bpcsg.apps.googleusercontent.com';
 const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
 const SHOP_NAME = 'DD_Treasure26';
-const VERSION = '2026-11-01-no-email'; // shown by the ping URL so you can tell which code is live
+const VERSION = '2026-11-01-options-coupons'; // shown by the ping URL so you can tell which code is live
 const FOLDER_NAME = 'DDTreasure26-Data';
 const TZ = 'Asia/Kolkata';
 const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
@@ -115,27 +115,88 @@ function nextOrderId_(orders) {
   const n = orders.filter(function (o) { return o.id.indexOf(ymd) >= 0; }).length + 1;
   return 'DDT-' + ymd + '-' + ('00' + n).slice(-3);
 }
-function totalOf_(o) { return o.subtotal + (o.courierCharge || 0) + (o.giftFee || 0); }
+function totalOf_(o) { return o.subtotal - (o.discount || 0) + (o.courierCharge || 0) + (o.giftFee || 0); }
+
+/** The option choice for one cart line, checked against the product's option groups. */
+function variantFor_(p, sel) {
+  const out = {}, parts = [];
+  (p.options || []).forEach(function (g) {
+    const val = sel && sel[g.name];
+    if (!g.values || g.values.indexOf(val) < 0) throw fail_('bad_request', 'Please choose ' + g.name + ' for ' + p.name + '.');
+    out[g.name] = val; parts.push(g.name + ': ' + val);
+  });
+  return { label: parts.join(', '), sel: out };
+}
+
+/** Prices a cart on the server: never trusts client prices, checks options and stock. */
+function priceItems_(rawItems, products) {
+  if (!Array.isArray(rawItems) || !rawItems.length || rawItems.length > 50) throw fail_('bad_request', 'Your cart is empty.');
+  const items = [], perProduct = {};
+  let subtotal = 0;
+  rawItems.forEach(function (it) {
+    const p = products.filter(function (x) { return x.id === it.id; })[0];
+    const qty = Math.floor(Number(it.qty));
+    if (!p || !(qty >= 1)) throw fail_('bad_request', 'A product in your cart is no longer available.');
+    perProduct[p.id] = (perProduct[p.id] || 0) + qty;
+    if (perProduct[p.id] > (p.qty || 0)) throw fail_('stock', p.name + ': only ' + (p.qty || 0) + ' left.');
+    const v = variantFor_(p, it.sel);
+    const price = p.offer && p.offerPrice > 0 ? Number(p.offerPrice) : Number(p.price);
+    items.push({ id: p.id, name: p.name, price: price, qty: qty, variant: v.label, sel: v.sel });
+    subtotal += price * qty;
+  });
+  return { items: items, subtotal: subtotal };
+}
+
+/** Discount (rupees) a coupon gives on the item subtotal, or throws a customer-friendly error. */
+function couponDiscount_(c, subtotal, email) {
+  if (!c || !c.active) throw fail_('coupon', 'This coupon code is not valid.');
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  if (c.expires && today > c.expires) throw fail_('coupon', 'This coupon has expired.');
+  if (c.limit > 0 && (c.used || 0) >= c.limit) throw fail_('coupon', 'This coupon has been fully used.');
+  if ((c.usedBy || []).indexOf(email) >= 0) throw fail_('coupon', 'You have already used this coupon.');
+  if (subtotal < (c.minOrder || 0)) throw fail_('coupon', 'Add items worth ₹' + c.minOrder + ' or more to use this coupon.');
+  let d = c.type === 'percent' ? Math.floor(subtotal * c.value / 100) : Math.round(c.value);
+  if (c.type === 'percent' && c.maxDiscount > 0) d = Math.min(d, c.maxDiscount);
+  return Math.max(0, Math.min(d, subtotal));
+}
+function couponLabel_(c) {
+  if (c.type === 'percent') return c.value + '% off' + (c.maxDiscount > 0 ? ' (up to ₹' + c.maxDiscount + ')' : '');
+  return '₹' + c.value + ' off';
+}
+function findCoupon_(coupons, code) {
+  const k = str_(code, 30).toUpperCase();
+  return coupons.filter(function (x) { return x.code === k; })[0];
+}
+
+/** Count (hold=true) or free (hold=false) the coupon use belonging to an order. Caller holds the lock. */
+function couponHold_(o) {
+  if (!o.coupon) return;
+  const cancelled = o.status === 'Cancelled';
+  if (cancelled === !!o.couponReleased) return; // already in the right state
+  const coupons = read_('coupons.json', []);
+  const c = findCoupon_(coupons, o.coupon.code);
+  if (c) {
+    if (cancelled) {
+      c.used = Math.max(0, (c.used || 0) - 1);
+      c.usedBy = (c.usedBy || []).filter(function (e) { return e !== o.userEmail; });
+    } else {
+      c.used = (c.used || 0) + 1;
+      c.usedBy = (c.usedBy || []).concat([o.userEmail]);
+    }
+    write_('coupons.json', coupons);
+  }
+  o.couponReleased = cancelled;
+}
 
 /* ---------- actions ---------- */
 const ACTIONS = {
   /* customer */
   placeOrder: { auth: true, write: true, run: function (user, b) {
     const catalog = read_('catalog.json', { updated: 0 });
-    const products = catalog.products || [];
     const settings = catalog.settings || {};
-    if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) throw fail_('bad_request', 'Your cart is empty.');
-    const items = [];
-    let subtotal = 0;
-    b.items.forEach(function (it) {
-      const p = products.filter(function (x) { return x.id === it.id; })[0];
-      const qty = Math.floor(Number(it.qty));
-      if (!p || !(qty >= 1)) throw fail_('bad_request', 'A product in your cart is no longer available.');
-      if (qty > (p.qty || 0)) throw fail_('stock', p.name + ': only ' + (p.qty || 0) + ' left.');
-      const price = p.offer && p.offerPrice > 0 ? Number(p.offerPrice) : Number(p.price);
-      items.push({ id: p.id, name: p.name, price: price, qty: qty });
-      subtotal += price * qty;
-    });
+    const priced = priceItems_(b.items, catalog.products || []);
+    const items = priced.items, subtotal = priced.subtotal;
+
     const mode = b.mode === 'courier' ? 'courier' : 'pickup';
     const c = b.customer || {};
     const customer = { name: str_(c.name, 80), phone: str_(c.phone, 20), address: str_(c.address, 300), city: str_(c.city, 60), pin: str_(c.pin, 10), note: str_(c.note, 200) };
@@ -148,10 +209,19 @@ const ACTIONS = {
       if (!z) throw fail_('bad_request', 'Please choose a delivery location.');
       zone = z.name; charge = Math.max(0, Math.round(Number(z.charge) || 0));
     }
+
+    let coupons = null, coupon = null, discount = 0;
+    if (str_(b.coupon, 30)) {
+      coupons = read_('coupons.json', []);
+      coupon = findCoupon_(coupons, b.coupon);
+      discount = couponDiscount_(coupon, subtotal, user.email);
+    }
+
     const giftWrap = !!b.giftWrap;
     const orders = read_('orders.json', []);
     const order = {
       id: nextOrderId_(orders), date: new Date().toISOString(), items: items, subtotal: subtotal,
+      discount: discount, coupon: coupon ? { code: coupon.code, discount: discount } : null,
       mode: mode, courierZone: zone, courierCharge: charge,
       giftWrap: giftWrap, giftFee: giftWrap ? Math.max(0, Math.round(Number(settings.giftWrapFee) || 0)) : 0,
       giftMessage: str_(b.giftMessage, 300),
@@ -161,7 +231,20 @@ const ACTIONS = {
     order.total = totalOf_(order);
     orders.unshift(order);
     write_('orders.json', orders);
+    if (coupon) {
+      coupon.used = (coupon.used || 0) + 1;
+      coupon.usedBy = (coupon.usedBy || []).concat([user.email]);
+      write_('coupons.json', coupons);
+    }
     return { order: order };
+  } },
+
+  checkCoupon: { auth: true, run: function (user, b) {
+    const catalog = read_('catalog.json', { updated: 0 });
+    const priced = priceItems_(b.items, catalog.products || []);
+    const c = findCoupon_(read_('coupons.json', []), b.code);
+    const discount = couponDiscount_(c, priced.subtotal, user.email);
+    return { code: c.code, discount: discount, label: couponLabel_(c) };
   } },
 
   myOrders: { auth: true, run: function (user) {
@@ -185,6 +268,7 @@ const ACTIONS = {
     if (!o) throw fail_('not_found', 'Order not found.');
     if (o.status !== 'Awaiting payment') throw fail_('bad_request', 'This order can no longer be cancelled here. Please contact us.');
     o.status = 'Cancelled'; o.history.push({ status: o.status, at: new Date().toISOString() });
+    couponHold_(o);
     write_('orders.json', orders);
     return { order: o };
   } },
@@ -205,7 +289,7 @@ const ACTIONS = {
 
   /* admin */
   adminData: { auth: true, admin: true, run: function () {
-    return { orders: read_('orders.json', []), reviews: read_('reviews.json', []) };
+    return { orders: read_('orders.json', []), reviews: read_('reviews.json', []), coupons: read_('coupons.json', []) };
   } },
 
   saveCatalog: { auth: true, admin: true, write: true, run: function (user, b) {
@@ -225,6 +309,31 @@ const ACTIONS = {
     write_('reviews.json', b.reviews);
     bust_();
     return {};
+  } },
+
+  /** Admin edits coupon rules; usage counters always come from the server so they cannot be overwritten. */
+  saveCoupons: { auth: true, admin: true, write: true, run: function (user, b) {
+    if (!Array.isArray(b.coupons)) throw fail_('bad_request', 'Invalid coupons.');
+    const old = read_('coupons.json', []);
+    const out = [], seen = {};
+    b.coupons.forEach(function (c) {
+      const code = str_(c.code, 20).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length < 3 || seen[code]) throw fail_('bad_request', 'Coupon codes must be unique, 3 to 20 letters or digits.');
+      seen[code] = true;
+      const type = c.type === 'flat' ? 'flat' : 'percent';
+      const value = Number(c.value);
+      if (!(value > 0) || (type === 'percent' && value > 100)) throw fail_('bad_request', 'Invalid discount value for ' + code + '.');
+      const prev = old.filter(function (x) { return x.code === code; })[0] || {};
+      out.push({
+        code: code, type: type, value: value,
+        minOrder: Math.max(0, Number(c.minOrder) || 0), maxDiscount: Math.max(0, Number(c.maxDiscount) || 0),
+        expires: /^\d{4}-\d{2}-\d{2}$/.test(c.expires || '') ? c.expires : '',
+        limit: Math.max(0, Math.floor(Number(c.limit) || 0)), active: !!c.active,
+        used: prev.used || 0, usedBy: prev.usedBy || []
+      });
+    });
+    write_('coupons.json', out);
+    return { coupons: out };
   } },
 
   uploadImage: { auth: true, admin: true, run: function (user, b) {
@@ -266,6 +375,7 @@ const ACTIONS = {
       }
       o.status = b.status;
       o.history.push({ status: o.status, at: new Date().toISOString() });
+      couponHold_(o);
     }
     write_('orders.json', orders);
 

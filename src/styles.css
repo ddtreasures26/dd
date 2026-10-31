@@ -269,8 +269,20 @@ label { display: grid; gap: 5px; } label.switch { display: flex; color: var(--te
 .starpick button.on { color: var(--accent); }
 
 /* ===== Footer / toast ===== */
-.foot { text-align: center; padding: 34px 20px 30px; background: var(--surface); border-top: 1px solid var(--border); display: grid; gap: 8px; justify-items: center; }
+.foot { text-align: center; padding: 34px 20px 30px; background: var(--surface); border-top: 1px solid var(--border); display: grid; gap: 14px; justify-items: center; }
 .foot img { width: 84px; border-radius: 50%; } .foot p { max-width: 560px; margin: 0; }
+.foot h3 { font: 700 1.4rem 'Cormorant Garamond', 'Inter', Georgia, serif; margin: 4px 0; }
+.foot-cols { width: 100%; max-width: 1060px; display: grid; gap: 26px; grid-template-columns: 1fr; justify-items: center; }
+.foot-about, .foot-loc { display: grid; gap: 8px; justify-items: center; align-content: start; width: 100%; min-width: 0; }
+.foot-loc .mapbox { max-width: none; }
+/* About and location side by side once there is room */
+@media (min-width: 600px) {
+  .foot-cols { grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .foot-about, .foot-loc { justify-items: start; text-align: left; }
+  .foot-about p, .foot-loc p { max-width: none; }
+  .foot-loc .mapbox { justify-items: start; }
+  .foot-loc .mapbox iframe { height: 240px; }
+}
 .foot .links { display: flex; gap: 6px 18px; flex-wrap: wrap; justify-content: center; }
 #toast { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translate(-50%, 30px); opacity: 0; pointer-events: none; background: var(--text); color: var(--bg); padding: 11px 22px; border-radius: 999px; transition: .25s; z-index: 60; max-width: 90vw; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }

@@ -130,10 +130,18 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <Img src={s.logo} w={160} alt="" />
-        <p>{s.about}</p>
-        <p>📍 {s.address}<br />📞 {s.phone}{s.email && <><br />✉️ {s.email}</>}</p>
-        <MapBlock />
+        <div className="foot-cols">
+          <section className="foot-about">
+            <Img src={s.logo} w={160} alt="" />
+            <h3>About us</h3>
+            <p>{s.about}</p>
+          </section>
+          <section className="foot-loc">
+            <h3>Find us</h3>
+            <p>📍 {s.address}<br />📞 {s.phone}{s.email && <><br />✉️ {s.email}</>}</p>
+            <MapBlock />
+          </section>
+        </div>
         <p className="links">
           {s.instagram && <a href={s.instagram} target="_blank" rel="noreferrer">Instagram</a>}
           <Link to="/reviews">Reviews</Link>

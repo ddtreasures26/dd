@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Store, money } from '../store';
 import { useAuth } from '../auth';
-import { Timeline, toast } from '../ui';
+import { Timeline, toast, Img } from '../ui';
 import { useOrderSync } from '../sync';
 import { REMOTE } from '../api';
 
@@ -34,7 +34,7 @@ export default function Orders() {
           </div>
           <small className="muted">{new Date(o.date).toLocaleString()} · {o.items.reduce((a, i) => a + i.qty, 0)} item(s)</small>
           <div className="mini">
-            {o.items.slice(0, 5).map((i, k) => <img key={k} src={Store.product(i.id)?.images[0] || Store.data.settings.logo} alt={i.name} title={i.name} />)}
+            {o.items.slice(0, 5).map((i, k) => <Img key={k} src={Store.product(i.id)?.images[0] || Store.data.settings.logo} w={120} alt={i.name} title={i.name} />)}
             {o.items.length > 5 && <span className="more">+{o.items.length - 5}</span>}
           </div>
           <Timeline status={o.status} />

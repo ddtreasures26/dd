@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Store, money } from '../store';
 import { useAuth } from '../auth';
-import { Icon, Timeline, toast, waLink } from '../ui';
+import { Icon, Timeline, toast, waLink, Img } from '../ui';
 import { orderText } from './Pay';
 import { REMOTE, api } from '../api';
 import { useOrderSync } from '../sync';
@@ -15,7 +15,7 @@ export function OrderSummary({ o }) {
         const p = Store.product(i.id);
         return (
           <div className="line flat" key={k}>
-            <img src={p?.images[0] || Store.data.settings.logo} alt="" />
+            <Img src={p?.images[0] || Store.data.settings.logo} w={160} alt="" />
             <div className="grow"><b>{i.name}</b><div className="muted small">{money(i.price)} × {i.qty}</div></div>
             <b>{money(i.price * i.qty)}</b>
           </div>

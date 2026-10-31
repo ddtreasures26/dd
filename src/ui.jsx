@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Store, money } from './store';
+import { Store, art, driveId, money } from './store';
 import { useAuth } from './auth';
 import { REMOTE, api } from './api';
 import { Link } from 'react-router-dom';
@@ -42,7 +42,7 @@ export function ProductCard({ p, onOpen }) {
     <article className="card product" onClick={() => onOpen(p.id)} tabIndex={0}
       onKeyDown={e => e.key === 'Enter' && onOpen(p.id)}>
       <div className="thumb">
-        <img src={p.images[0]} alt={p.name} loading="lazy" />
+        <Img src={p.images[0]} w={500} alt={p.name} loading="lazy" />
         {off > 0 && <span className="badge">{off}% off</span>}
         {st.cls === 'out' && <span className="badge dark">Sold out</span>}
       </div>
@@ -224,5 +224,21 @@ export function MapBlock() {
       {m.embed && <iframe src={m.embed} title="Shop location" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />}
       <a className="btn small" href={m.link} target="_blank" rel="noreferrer">📍 Get directions</a>
     </div>
+  );
+}
+
+const FALLBACK_IMG = art('📿', '#fff1e6', '#f6c1cf');
+
+/** <img> that tries Google's CDN, then Drive's download link, then a friendly placeholder. */
+export function Img({ src, w = 600, alt = '', ...rest }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => setStep(0), [src]);
+  const id = driveId(src);
+  const urls = id
+    ? [`https://lh3.googleusercontent.com/d/${id}=w${w}`, `https://drive.usercontent.google.com/download?id=${id}&export=view`, FALLBACK_IMG]
+    : [src || FALLBACK_IMG, FALLBACK_IMG];
+  return (
+    <img src={urls[Math.min(step, urls.length - 1)]} alt={alt} referrerPolicy="no-referrer" decoding="async"
+      onError={() => setStep(n => n + 1)} {...rest} />
   );
 }

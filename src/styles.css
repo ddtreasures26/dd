@@ -330,3 +330,19 @@ label { display: grid; gap: 5px; } label.switch { display: flex; color: var(--te
   body, .shell { background: #fff !important; padding: 0 !important; } main { padding: 0 !important; max-width: none; }
   .invoice { box-shadow: none; border: 0; padding: 0; }
 }
+
+/* ===== Rupee amounts: Inter has a proper ₹ and even-width digits ===== */
+body { font-family: 'DM Sans', 'Inter', system-ui, sans-serif; }
+h1, h2, h3, .brand b { font-family: 'Cormorant Garamond', 'Inter', Georgia, serif; }
+.price, .amount, .totals dd, .totals dt, .amt, .stat b, .line b, .right b, .sugg small, .rowlink.static b, .inv-table td, .inv-table th,
+.meta .price b, .badge, .pill, select option {
+  font-family: 'Inter', 'DM Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums; font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+.price b { font-weight: 700; letter-spacing: -.01em; }
+.price s { font-weight: 500; opacity: .75; }
+.meta .price b { font-size: 1.75rem; letter-spacing: -.02em; }
+.amount { font-size: 2.7rem; font-weight: 700; letter-spacing: -.03em; }
+.stat b { font-size: 1.3rem; font-weight: 700; letter-spacing: -.02em; }
+.totals dd { font-weight: 600; } .totals .grand dd, .totals .grand dt { font-weight: 700; }
+.amt { font-weight: 700; }

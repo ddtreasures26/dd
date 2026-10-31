@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Img } from '../ui';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Avatar, GoogleButton, useAuth } from '../auth';
 import { Store } from '../store';
@@ -26,7 +27,7 @@ export default function Login() {
 
   return (
     <div className="card login">
-      <img className="loginlogo" src={s.logo} alt="" />
+      <Img className="loginlogo" src={s.logo} w={256} alt="" />
       <h1>Welcome</h1>
       <p className="muted">Sign in with Google to place orders, track them and leave reviews.</p>
       {enabled ? <GoogleButton /> : (

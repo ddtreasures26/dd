@@ -4,7 +4,7 @@ import { useAuth } from '../auth';
 import { REMOTE } from '../api';
 import { Store, money } from '../store';
 import { useOrderSync } from '../sync';
-import { toast } from '../ui';
+import { toast, Img } from '../ui';
 
 const PAID = ['Confirmed', 'Shipped', 'Delivered'];
 
@@ -32,7 +32,7 @@ export default function Invoice() {
       </div>
       <article className="invoice card">
         <header className="inv-head">
-          <img src={s.logo} alt="" />
+          <Img src={s.logo} w={160} alt="" />
           <div className="grow">
             <h1>{s.shopName}</h1>
             <p className="muted small">{s.address}<br />{s.phone}{s.email && <> · {s.email}</>}</p>

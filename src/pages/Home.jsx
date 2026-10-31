@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Store } from '../store';
+import { Store, imgUrl } from '../store';
 import { ProductCard } from '../ui';
 
 function Carousel({ banners }) {
@@ -18,7 +18,7 @@ function Carousel({ banners }) {
     <section className="carousel" aria-roledescription="carousel">
       <div className="track" style={{ transform: `translateX(-${i * 100}%)` }}>
         {banners.map((b, k) => (
-          <div className="slide" key={k} style={{ backgroundImage: `url("${b.image}")` }}>
+          <div className="slide" key={k} style={{ backgroundImage: `url("${imgUrl(b.image, 1400)}")` }}>
             <div className="cap"><h2>{b.title}</h2><p>{b.text}</p></div>
           </div>
         ))}

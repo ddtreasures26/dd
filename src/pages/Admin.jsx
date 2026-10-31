@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { REMOTE, api } from '../api';
 import { Store, fileToDataURL, money, useStore } from '../store';
 import { ADMIN_EMAIL } from '../config';
-import { Stars, notify, toast } from '../ui';
+import { Stars, notify, toast, Img } from '../ui';
 import { GoogleButton, useAuth } from '../auth';
 
 const TABS = [['products', '🛍️ Products'], ['categories', '🗂️ Categories'], ['home', '🏠 Home & promos'], ['shop', '🏪 Shop details'], ['courier', '📮 Courier'], ['orders', '📦 Orders'], ['analytics', '📊 Analytics'], ['reviews', '⭐ Reviews'], ['data', '💾 Backup']];
@@ -108,7 +108,7 @@ function Products() {
       <div className="table">
         {products.map(p => (
           <div className="trow card" key={p.id}>
-            <img src={p.images[0]} alt="" />
+            <Img src={p.images[0]} w={120} alt="" />
             <div className="grow"><b>{p.name}</b><div className="muted small">{p.category} · {money(p.price)}{p.offer && p.offerPrice ? ` → ${money(p.offerPrice)}` : ''} · qty {p.qty}</div></div>
             <button className="btn ghost small" onClick={() => setE({ ...p })}>Edit</button>
             <button className="btn ghost small danger" onClick={() => {
@@ -158,7 +158,7 @@ function ProductForm({ init, onDone }) {
       <label>Photos<input type="file" accept="image/*" multiple onChange={addImgs} /></label>
       <div className="thumbs">
         {p.images.map((s, i) => (
-          <span key={i} className="rm"><img src={s} alt="" /><button type="button" onClick={() => setP({ ...p, images: p.images.filter((_, k) => k !== i) })} aria-label="Remove photo">×</button></span>
+          <span key={i} className="rm"><Img src={s} w={160} alt="" /><button type="button" onClick={() => setP({ ...p, images: p.images.filter((_, k) => k !== i) })} aria-label="Remove photo">×</button></span>
         ))}
       </div>
       <div className="row">
@@ -203,7 +203,7 @@ function ImageField({ label, value, onChange, max = 900 }) {
   return (
     <div className="imgfield">
       <span className="lbl">{label}</span>
-      {value && <img src={value} alt="" />}
+      {value && <Img src={value} w={400} alt="" />}
       <div className="row">
         <button type="button" className="btn ghost small" onClick={() => ref.current.click()}>{value ? 'Change' : 'Upload'}</button>
         {value && <button type="button" className="btn ghost small" onClick={() => onChange('')}>Remove</button>}

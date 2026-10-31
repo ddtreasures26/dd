@@ -248,4 +248,14 @@ export function fileToDataURL(file, max = 900, quality = 0.82) {
   });
 }
 
-export const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+/** Rupees with Indian digit grouping: ₹1,23,456 (paise only when present). */
+export const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+/** Google Drive file id from any Drive image link we may have stored, else null. */
+export const driveId = url => (typeof url === 'string' && url.match(/drive\.google\.com\/(?:thumbnail|uc)\?[^#]*?\bid=([\w-]+)/)?.[1]) || null;
+
+/** Direct, CDN-served image URL at roughly the requested width (works for photos already published). */
+export const imgUrl = (url, w = 600) => {
+  const id = driveId(url);
+  return id ? `https://lh3.googleusercontent.com/d/${id}=w${w}` : url;
+};

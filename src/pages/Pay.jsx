@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { Store, money } from '../store';
-import { Icon, toast, waLink } from '../ui';
+import { Icon, toast, waLink, Img } from '../ui';
 import { REMOTE, api } from '../api';
 import { useAuth } from '../auth';
 import { useOrderSync } from '../sync';
@@ -62,7 +62,7 @@ export default function Pay() {
         {o.mode === 'courier' && <p className="muted small">Includes estimated courier of {money(o.courierCharge)}. The final amount is confirmed on WhatsApp.</p>}
 
         {s.qrImage
-          ? <img className="qr" src={s.qrImage} alt="Payment QR code" />
+          ? <Img className="qr" src={s.qrImage} w={700} alt="Payment QR code" />
           : <p className="notice">The shop hasn’t added a payment QR yet.</p>}
 
         <div className="row center">

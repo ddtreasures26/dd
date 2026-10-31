@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Store } from '../store';
-import { Icon, Price, RatingSummary, Reviews, stockLabel, toast, waLink } from '../ui';
+import { Icon, Price, RatingSummary, Reviews, stockLabel, toast, waLink, Img } from '../ui';
 
 export default function Product() {
   const { id } = useParams();
@@ -31,10 +31,10 @@ export default function Product() {
   return (
     <div className="detail">
       <div className="gallery">
-        <img className="main" src={p.images[img]} alt={p.name} />
+        <Img className="main" src={p.images[img]} w={1100} alt={p.name} />
         {p.images.length > 1 && (
           <div className="thumbs">
-            {p.images.map((s, i) => <img key={i} src={s} alt="" className={i === img ? 'on' : ''} onClick={() => setImg(i)} />)}
+            {p.images.map((s, i) => <Img key={i} src={s} w={160} alt="" className={i === img ? 'on' : ''} onClick={() => setImg(i)} />)}
           </div>
         )}
       </div>

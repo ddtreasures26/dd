@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { REMOTE, api } from '../api';
 import { Store, money } from '../store';
-import { notify, toast } from '../ui';
+import { notify, toast, Img } from '../ui';
 
 export default function Cart() {
   const nav = useNavigate();
@@ -83,7 +83,7 @@ export default function Cart() {
         <h1>Your cart</h1>
         {lines.map(l => (
           <div className="line card" key={l.id}>
-            <img src={l.p.images[0]} alt="" />
+            <Img src={l.p.images[0]} w={160} alt="" />
             <div className="grow">
               <Link to={`/product/${l.id}`}><b>{l.p.name}</b></Link>
               <div className="muted">{money(Store.price(l.p))} each</div>

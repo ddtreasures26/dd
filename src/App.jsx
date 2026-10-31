@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Store, useStore } from './store';
-import { Icon, MapBlock, Toast } from './ui';
+import { Icon, MapBlock, Toast, Img } from './ui';
 import { Avatar, useAuth } from './auth';
 import { REMOTE } from './api';
 import { useOrderSync } from './sync';
@@ -82,7 +82,7 @@ export default function App() {
     <div className="shell">
       <header className="top">
         <Link to="/" className="brand">
-          <img src={s.logo} alt="" />
+          <Img src={s.logo} w={160} alt="" />
           <span><b>{s.shopName}</b><small>{s.tagline}</small></span>
         </Link>
         <nav className="dnav" aria-label="Main">
@@ -100,7 +100,7 @@ export default function App() {
               ))}
               {suggestions.map(p => (
                 <li key={p.id}><button type="button" onMouseDown={() => { setSugOpen(false); setQ(''); nav(`/product/${p.id}`); }}>
-                  <img src={p.images[0]} alt="" /><span>{p.name}</span><small>₹{Store.price(p)}</small></button></li>
+                  <Img src={p.images[0]} w={96} alt="" /><span>{p.name}</span><small>₹{Store.price(p)}</small></button></li>
               ))}
             </ul>
           )}
@@ -130,7 +130,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <img src={s.logo} alt="" />
+        <Img src={s.logo} w={160} alt="" />
         <p>{s.about}</p>
         <p>📍 {s.address}<br />📞 {s.phone}{s.email && <><br />✉️ {s.email}</>}</p>
         <MapBlock />

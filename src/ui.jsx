@@ -146,3 +146,70 @@ export function Reviews({ productId = null, productName = '' }) {
     </section>
   );
 }
+
+const ICONS = {
+  home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
+  star: <polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9" />,
+  bag: <><path d="M6 7h12l1 13H5L6 7z" /><path d="M9 7a3 3 0 016 0" /></>,
+  box: <><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" /><path d="M3 8l9 5 9-5M12 13v8" /></>,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></>,
+  sliders: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>,
+  check: <path d="M5 12l5 5 9-10" />,
+  copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 012-2h9" /></>,
+  chat: <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z" />
+};
+export const Icon = ({ name, size = 22 }) => (
+  <svg className="ico" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {ICONS[name]}
+  </svg>
+);
+
+export const STEPS = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered'];
+
+/** Order progress tracker. */
+export function Timeline({ status }) {
+  if (status === 'Cancelled') return <p className="notice small">This order was cancelled.</p>;
+  const at = Math.max(0, STEPS.indexOf(status));
+  return (
+    <ol className="timeline">
+      {STEPS.map((s, i) => (
+        <li key={s} className={i < at ? 'done' : i === at ? 'now' : ''}>
+          <span className="node">{i < at ? <Icon name="check" size={12} /> : i + 1}</span>
+          <small>{s}</small>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Turn whatever the admin pasted (embed code, Maps link, coordinates or plain address) into {embed, link}. */
+export function mapParts(input, address = '') {
+  const v = (input || '').trim();
+  if (!v) return null;
+  const src = v.match(/src=["']([^"']+)["']/)?.[1] || v;
+  const search = q => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  const embedQ = q => `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=16&output=embed`;
+  if (/^https:\/\/www\.google\.[a-z.]+\/maps\/embed/.test(src)) return { embed: src, link: search(address || 'DD_Treasure26') };
+  if (/^https?:\/\//.test(src)) {
+    const at = src.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || src.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (at) return { embed: embedQ(`${at[1]},${at[2]}`), link: src };
+    const q = src.match(/[?&](?:q|query)=([^&]+)/);
+    if (q) return { embed: embedQ(decodeURIComponent(q[1].replace(/\+/g, ' '))), link: src };
+    // short links (maps.app.goo.gl) cannot be embedded: embed the address instead, link to the pasted URL
+    return { embed: address ? embedQ(address) : '', link: src };
+  }
+  return { embed: embedQ(v), link: search(v) };
+}
+
+export function MapBlock() {
+  const s = Store.data.settings;
+  const m = mapParts(s.mapInput, s.address);
+  if (!m) return null;
+  return (
+    <div className="mapbox">
+      {m.embed && <iframe src={m.embed} title="Shop location" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />}
+      <a className="btn small" href={m.link} target="_blank" rel="noreferrer">📍 Get directions</a>
+    </div>
+  );
+}

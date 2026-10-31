@@ -15,7 +15,7 @@ export default function Cart() {
 
   const [mode, setMode] = useState('pickup');
   const [zone, setZone] = useState(0);
-  const [f, setF] = useState({ name: user?.name || '', phone: '', address: '', city: '', pin: '', note: '' });
+  const [f, setF] = useState(() => ({ name: user?.name || '', note: '', ...Store.profile(user?.email) }));
   const set = k => e => setF({ ...f, [k]: e.target.value });
 
   const sync = next => Store.setCart(next.map(({ id, qty }) => ({ id, qty })));
@@ -41,6 +41,7 @@ export default function Cart() {
       subtotal, mode, courierZone: mode === 'courier' ? z?.name : '', courierCharge: shipping, total,
       userEmail: user?.email || '', customer: { ...f }, status: 'Awaiting payment'
     };
+    Store.setProfile(user?.email, { phone: f.phone, address: f.address, city: f.city, pin: f.pin });
     Store.setOrders([order, ...Store.orders()]);
     Store.setCart([]);
     notify('Order created', `${order.id} · ${money(total)} — complete the payment to confirm.`);
@@ -49,6 +50,12 @@ export default function Cart() {
 
   return (
     <div className="cart-wrap">
+      <ol className="flow wide">
+        <li className="now"><span>1</span>Cart</li>
+        <li><span>2</span>Details</li>
+        <li><span>3</span>Pay</li>
+        <li><span>4</span>Confirm</li>
+      </ol>
       <section>
         <h1>Your cart</h1>
         {lines.map(l => (

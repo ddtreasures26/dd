@@ -49,6 +49,12 @@ export default function Admin() {
         <h1>Admin</h1>
         <button className="btn ghost small" onClick={() => { sessionStorage.removeItem('ddt.admin'); setOk(false); auth.signOut(); }}>Log out</button>
       </div>
+      <div className="stats four">
+        <div className="card stat"><b>{Store.data.products.length}</b><small>Products</small></div>
+        <div className="card stat"><b>{Store.data.products.filter(p => p.qty <= Store.data.settings.lowStockAt).length}</b><small>Low / out of stock</small></div>
+        <div className="card stat"><b>{Store.orders().filter(o => o.status === 'Awaiting payment' || o.status === 'Payment sent').length}</b><small>Open orders</small></div>
+        <div className="card stat"><b>{Store.reviews('all').length}</b><small>Reviews</small></div>
+      </div>
       <div className="chips">
         {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
       </div>
@@ -220,6 +226,10 @@ function ShopSettings() {
       <label>Tagline<input value={s.tagline} onChange={set('tagline')} /></label>
       <label>About us<textarea rows={4} value={s.about} onChange={set('about')} /></label>
       <label>Address<textarea rows={2} value={s.address} onChange={set('address')} /></label>
+      <label>Map location (shown in the footer)
+        <textarea rows={3} value={s.mapInput} onChange={set('mapInput')} placeholder="Paste a Google Maps link, the “Embed a map” code, or just your address" />
+      </label>
+      <p className="muted small" style={{ margin: 0 }}>Easiest: in Google Maps open your shop → Share → <b>Embed a map</b> → copy HTML and paste it here. Leave empty to hide the map.</p>
       <label>Phone<input value={s.phone} onChange={set('phone')} /></label>
       <label>WhatsApp number (with country code, digits only)<input value={s.whatsapp} onChange={set('whatsapp')} inputMode="numeric" /></label>
       <label>Email<input value={s.email} onChange={set('email')} /></label>

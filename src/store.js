@@ -20,6 +20,7 @@ const seed = () => ({
     logo: 'assets/logo.png',
     about: 'DD_Treasure26 is a tiny handmade studio of two sisters. Every pearl, bow and charm is picked and strung by hand, so each piece carries a little bit of love.',
     address: 'Add your address here',
+    mapInput: '',
     phone: '+91 00000 00000',
     whatsapp: '910000000000',
     email: ADMIN_EMAIL,
@@ -131,6 +132,10 @@ export const Store = {
 
   recent: () => read(RECENT, []),
   addRecent(id) { write(RECENT, [id, ...Store.recent().filter(x => x !== id)].slice(0, 10)); },
+
+  /** Saved delivery details, per signed-in email (or 'guest'). */
+  profile: key => ({ phone: '', address: '', city: '', pin: '', ...(read('ddt.profile.v1', {})[key || 'guest'] || {}) }),
+  setProfile(key, p) { write('ddt.profile.v1', { ...read('ddt.profile.v1', {}), [key || 'guest']: p }); emit(); },
 
   prefs: () => ({ theme: 'auto', notify: false, ...read(PREFS, {}) }),
   setPrefs(p) { write(PREFS, { ...Store.prefs(), ...p }); emit(); }

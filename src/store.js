@@ -2,6 +2,7 @@
    swapped for Google Drive (see `adapter`) without touching the UI. */
 import { useEffect, useState } from 'react';
 import { ADMIN_EMAIL } from './config';
+import { REMOTE, api } from './api';
 
 const KEY = 'ddt.catalog.v1';
 const ORDERS = 'ddt.orders.v1';
@@ -30,6 +31,7 @@ const seed = () => ({
     promoVideo: '',
     adminPin: '1234',
     lowStockAt: 10,
+    giftWrapFee: 30,
     banners: [
       { title: 'Handmade with love', text: 'Pearls, charms & little treasures', image: art('💍', '#fde4ea', '#f6c1cf') },
       { title: 'Festive offers', text: 'Up to 20% off on selected sets', image: art('🎀', '#fbe8d3', '#f0c39a') },
@@ -64,9 +66,30 @@ const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); retu
 export const adapter = { load: () => read(KEY, null), save: d => write(KEY, d) };
 
 let data = adapter.load();
-if (!data) { data = seed(); adapter.save(data); }
+// With a backend, customers must never see sample products: start empty until the real catalog loads.
+const emptyCatalog = () => ({ settings: seed().settings, categories: [], products: [], reviews: [] });
+if (!data) { data = REMOTE ? emptyCatalog() : seed(); adapter.save(data); }
 data.settings = { ...seed().settings, ...data.settings };
 data.reviews ||= [];
+
+let status = REMOTE ? 'loading' : 'ready'; // loading | ready | error
+let published = !REMOTE; // has the admin ever published a catalog to Drive?
+let lastError = '';
+let adminOrders = [];
+let tokenGetter = async () => { throw new Error('Please sign in.'); };
+
+const isInlineImage = v => typeof v === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(v);
+
+/** Upload any photos still stored inline (data URLs) to Drive and swap in their URLs. */
+async function uploadPending(token) {
+  const jobs = [];
+  const add = (obj, key) => { if (isInlineImage(obj[key])) jobs.push([obj, key]); };
+  data.products.forEach(p => (p.images || []).forEach((_, i) => add(p.images, i)));
+  add(data.settings, 'logo');
+  add(data.settings, 'qrImage');
+  (data.settings.banners || []).forEach(b => add(b, 'image'));
+  for (const [obj, key] of jobs) obj[key] = (await api.uploadImage(token, obj[key])).url;
+}
 
 const bus = new EventTarget();
 const emit = () => bus.dispatchEvent(new Event('change'));
@@ -84,8 +107,71 @@ export function useStore() {
 
 export const Store = {
   get data() { return data; },
-  /** Persist catalog changes. Returns false if the browser storage is full. */
-  commit() { const ok = adapter.save(data); emit(); return ok; },
+  get status() { return status; },
+  get published() { return published; },
+  get lastError() { return lastError; },
+  get adminOrders() { return adminOrders; },
+  setTokenGetter(fn) { tokenGetter = fn; },
+  setReviews(list) { data.reviews = list; Store.persist(); },
+
+  /** Save to this browser only. Returns false if browser storage is full. */
+  persist() { const ok = adapter.save(data); emit(); return ok; },
+
+  /** Save locally and, when a backend is configured, publish to Drive (admin only). Resolves true on success. */
+  async commit(scope = 'catalog') {
+    const ok = Store.persist();
+    if (!REMOTE) return ok;
+    lastError = '';
+    try {
+      const token = await tokenGetter();
+      if (scope === 'reviews') await api.saveReviews(token, data.reviews);
+      else {
+        await uploadPending(token);
+        Store.persist();
+        const { adminPin, ...settings } = data.settings;
+        await api.saveCatalog(token, { settings, categories: data.categories, products: data.products });
+        published = true;
+      }
+      return true;
+    } catch (e) { lastError = e.message; return false; }
+  },
+
+  /** Fetch the shared catalog (products, settings, visible reviews). */
+  async refresh() {
+    if (!REMOTE) return;
+    try {
+      const d = await api.catalog();
+      if (d.catalog?.updated) {
+        data = {
+          settings: { ...seed().settings, ...d.catalog.settings },
+          categories: d.catalog.categories || [],
+          products: d.catalog.products || [],
+          reviews: d.reviews || []
+        };
+        published = true;
+      } else { published = false; data.reviews = d.reviews || []; }
+      status = 'ready';
+      adapter.save(data);
+    } catch { status = data.products.length ? 'ready' : 'error'; }
+    emit();
+  },
+
+  /** Admin: load every order and every review (including hidden ones). */
+  async loadAdminData() {
+    const d = await api.adminData(await tokenGetter());
+    adminOrders = d.orders;
+    data.reviews = d.reviews;
+    Store.persist();
+    return d.orders;
+  },
+  applyAdminOrder(order, products = []) {
+    adminOrders = adminOrders.map(o => (o.id === order.id ? order : o));
+    products.forEach(({ id, qty }) => { const p = data.products.find(x => x.id === id); if (p) p.qty = qty; });
+    Store.persist();
+  },
+  upsertOrder(order) { Store.setOrders([order, ...Store.orders().filter(x => x.id !== order.id)]); },
+  /** Replace this customer's cached orders with the server's copy. */
+  syncMyOrders(list, email) { Store.setOrders([...list, ...Store.orders().filter(o => (o.userEmail || '') !== email)]); },
   reset() { data = seed(); adapter.save(data); emit(); },
   exportJSON: () => JSON.stringify(data, null, 2),
   importJSON(text) {
@@ -108,7 +194,7 @@ export const Store = {
   },
   addReview(r) {
     data.reviews.unshift({ id: 'r' + Date.now().toString(36), date: new Date().toISOString(), visible: true, ...r });
-    return Store.commit();
+    return Store.persist();
   },
 
   cart: () => read(CART, []), // [{id, qty}]

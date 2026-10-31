@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Store, money } from './store';
 import { useAuth } from './auth';
+import { REMOTE, api } from './api';
+import { Link } from 'react-router-dom';
 
 const toastBus = new EventTarget();
 export const toast = msg => toastBus.dispatchEvent(new CustomEvent('t', { detail: msg }));
@@ -86,17 +88,20 @@ export function RatingSummary({ productId }) {
 
 /** Review list + form. productId: a product id, or null for general shop reviews. */
 export function Reviews({ productId = null, productName = '' }) {
-  const { user } = useAuth();
+  const { enabled, user, getToken } = useAuth();
   const list = Store.reviews(productId);
   const { n, avg } = Store.rating(productId);
   const lastName = (() => { try { return localStorage.getItem('ddt.reviewer') || ''; } catch { return ''; } })();
   const [f, setF] = useState({ name: user?.name || lastName, rating: 5, text: '' });
   const [sent, setSent] = useState(null);
 
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault();
     const r = { productId, name: f.name.trim(), rating: f.rating, text: f.text.trim() };
-    Store.addReview(r);
+    if (REMOTE) {
+      try { Store.setReviews((await api.addReview(await getToken(), r)).reviews); }
+      catch (err) { return toast(err.message); }
+    } else Store.addReview(r);
     try { localStorage.setItem('ddt.reviewer', r.name); } catch { /* ignore */ }
     setSent(r);
     setF({ ...f, text: '', rating: 5 });
@@ -112,7 +117,14 @@ export function Reviews({ productId = null, productName = '' }) {
         {n > 0 && <span className="rating"><Stars value={avg} size="1.2em" /> <b>{avg.toFixed(1)}</b> <small className="muted">({n})</small></span>}
       </div>
 
-      <form className="card form" onSubmit={submit}>
+      {enabled && !user && (
+        <div className="card form">
+          <b>{productId ? 'Review this product' : 'Share your experience with us'}</b>
+          <p className="muted small" style={{ margin: 0 }}>Sign in with Google to write a review.</p>
+          <Link className="btn" to="/login">Sign in</Link>
+        </div>
+      )}
+      <form className="card form" onSubmit={submit} hidden={enabled && !user}>
         <b>{productId ? 'Review this product' : 'Share your experience with us'}</b>
         <div className="starpick" role="radiogroup" aria-label="Rating">
           {[1, 2, 3, 4, 5].map(i => (
@@ -157,6 +169,7 @@ const ICONS = {
   search: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>,
   check: <path d="M5 12l5 5 9-10" />,
   copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 012-2h9" /></>,
+  share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4" /></>,
   chat: <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z" />
 };
 export const Icon = ({ name, size = 22 }) => (

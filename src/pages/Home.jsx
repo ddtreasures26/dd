@@ -42,12 +42,26 @@ export default function Home() {
   const cat = sp.get('cat') || '';
   const open = id => nav(`/product/${id}`);
 
-  const list = products.filter(p =>
-    (!cat || p.category === cat) &&
-    (!q || `${p.name} ${p.category} ${p.description}`.toLowerCase().includes(q)));
+  const sort = sp.get('sort') || 'newest';
+  const stockOnly = sp.get('stock') === '1';
+  const cmp = {
+    newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.i - b.i,
+    low: (a, b) => Store.price(a.p) - Store.price(b.p),
+    high: (a, b) => Store.price(b.p) - Store.price(a.p),
+    name: (a, b) => a.p.name.localeCompare(b.p.name)
+  }[sort] || (() => 0);
+  const list = products
+    .filter(p =>
+      (!cat || p.category === cat) &&
+      (!stockOnly || p.qty > 0) &&
+      (!q || `${p.name} ${p.category} ${p.description}`.toLowerCase().includes(q)))
+    .map((p, i) => ({ p, i, createdAt: p.createdAt }))
+    .sort(cmp)
+    .map(x => x.p);
   const offers = products.filter(p => p.offer && p.qty > 0);
   const recent = Store.recent().map(Store.product).filter(Boolean);
-  const filtering = q || cat;
+  const filtering = q || cat || stockOnly;
+  const setParam = (k, v) => { const n = new URLSearchParams(sp); v ? n.set(k, v) : n.delete(k); setSp(n); };
   const setCat = c => { const n = new URLSearchParams(sp); c ? n.set('cat', c) : n.delete('cat'); setSp(n); };
 
   return (
@@ -75,9 +89,21 @@ export default function Home() {
 
       <section className="block">
         <h2>{q ? `Results for “${sp.get('q')}”` : cat || 'All products'} <small className="muted">({list.length})</small></h2>
+        <div className="toolbar">
+          <label className="sortsel">
+            <span>Sort by</span>
+            <select value={sort} onChange={e => setParam('sort', e.target.value === 'newest' ? '' : e.target.value)}>
+              <option value="newest">Newest first</option>
+              <option value="low">Price: low to high</option>
+              <option value="high">Price: high to low</option>
+              <option value="name">Name: A to Z</option>
+            </select>
+          </label>
+          <button className={`toggle${stockOnly ? ' on' : ''}`} onClick={() => setParam('stock', stockOnly ? '' : '1')} aria-pressed={stockOnly}>In stock only</button>
+        </div>
         {list.length ? (
           <div className="grid">{list.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
-        ) : <div className="empty">No products found.</div>}
+        ) : <div className="empty">{Store.status === 'loading' && !products.length ? 'Loading treasures…' : Store.status === 'error' && !products.length ? 'Could not load the shop. Check your connection and refresh.' : 'No products found.'}</div>}
       </section>
 
       {!filtering && settings.promoVideo && (

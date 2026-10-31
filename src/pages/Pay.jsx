@@ -1,6 +1,9 @@
 import { Link, useParams } from 'react-router-dom';
 import { Store, money } from '../store';
 import { Icon, toast, waLink } from '../ui';
+import { REMOTE, api } from '../api';
+import { useAuth } from '../auth';
+import { useOrderSync } from '../sync';
 import { OrderSummary } from './OrderDetail';
 
 export const orderText = (o, paid) => {
@@ -11,6 +14,7 @@ export const orderText = (o, paid) => {
     ...o.items.map(i => `• ${i.name} × ${i.qty} = ${money(i.price * i.qty)}`),
     `Items: ${money(o.subtotal)}`,
     o.mode === 'courier' ? `Courier (${o.courierZone}): ${money(o.courierCharge)} – to be confirmed` : 'Delivery: pickup / hand over',
+    ...(o.giftWrap ? [`Gift wrap: ${money(o.giftFee)}${o.giftMessage ? ` — message: "${o.giftMessage}"` : ''}`] : []),
     `Total: ${money(o.total)}`,
     `Name: ${c.name}`, `Phone: ${c.phone}`,
     ...(o.mode === 'courier' ? [`Address: ${c.address}, ${c.city} - ${c.pin}`] : []),
@@ -25,6 +29,8 @@ const copy = async (text, what) => {
 
 export default function Pay() {
   const { id } = useParams();
+  const { getToken } = useAuth();
+  useOrderSync();
   const o = Store.orders().find(x => x.id === id);
   const s = Store.data.settings;
   if (!o) return <div className="empty">Order not found. <Link to="/orders">My orders</Link></div>;
@@ -34,8 +40,10 @@ export default function Pay() {
     : '';
   const paid = o.status !== 'Awaiting payment';
 
-  const sent = () => {
-    if (o.status === 'Awaiting payment') Store.setOrders(Store.orders().map(x => x.id === o.id ? { ...x, status: 'Payment sent' } : x));
+  const sent = async () => {
+    if (o.status !== 'Awaiting payment') return;
+    Store.setOrders(Store.orders().map(x => x.id === o.id ? { ...x, status: 'Payment sent' } : x));
+    if (REMOTE) { try { await api.markPaymentSent(await getToken(), o.id); } catch { /* the WhatsApp message still reaches the shop */ } }
   };
 
   return (

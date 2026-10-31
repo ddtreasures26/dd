@@ -3,6 +3,8 @@ import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-ro
 import { Store, useStore } from './store';
 import { Icon, MapBlock, Toast } from './ui';
 import { Avatar, useAuth } from './auth';
+import { REMOTE } from './api';
+import { useOrderSync } from './sync';
 import { InstallBanner } from './pwa';
 import Home from './pages/Home';
 import Product from './pages/Product';
@@ -13,6 +15,7 @@ import OrderDetail from './pages/OrderDetail';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
+import Invoice from './pages/Invoice';
 import ReviewsPage from './pages/ReviewsPage';
 
 function useTheme() {
@@ -36,12 +39,33 @@ export default function App() {
   useTheme();
   const { enabled, user } = useAuth();
   const [q, setQ] = useState('');
+  const [sugOpen, setSugOpen] = useState(false);
+  useOrderSync({ poll: true });
   const nav = useNavigate();
   const loc = useLocation();
   const s = Store.data.settings;
   const count = Store.cart().reduce((a, l) => a + l.qty, 0);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
+  useEffect(() => { window.scrollTo(0, 0); setSugOpen(false); }, [loc.pathname]);
+
+  // Keep the shared catalog fresh (not while the admin is editing it).
+  useEffect(() => {
+    if (!REMOTE) return;
+    Store.refresh();
+    const run = () => { if (!document.hidden && !window.location.hash.startsWith('#/admin')) Store.refresh(); };
+    const t = setInterval(run, 300000);
+    document.addEventListener('visibilitychange', run);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', run); };
+  }, []);
+
+  const term = q.trim().toLowerCase();
+  const suggestions = term
+    ? Store.data.products
+        .filter(p => `${p.name} ${p.category}`.toLowerCase().includes(term))
+        .sort((a, b) => Number(a.name.toLowerCase().startsWith(term) ? 0 : 1) - Number(b.name.toLowerCase().startsWith(term) ? 0 : 1))
+        .slice(0, 6)
+    : [];
+  const cats = term ? Store.data.categories.filter(c => c.toLowerCase().includes(term)).slice(0, 2) : [];
 
   const search = e => { e.preventDefault(); nav(`/?q=${encodeURIComponent(q)}`); };
   const accountTo = '/profile';
@@ -66,7 +90,20 @@ export default function App() {
         </nav>
         <form className="search" onSubmit={search} role="search">
           <Icon name="search" size={18} />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search treasures…" aria-label="Search products" />
+          <input value={q} onChange={e => { setQ(e.target.value); setSugOpen(true); }} onFocus={() => setSugOpen(true)}
+            onBlur={() => setTimeout(() => setSugOpen(false), 150)} placeholder="Search treasures…" aria-label="Search products" autoComplete="off" />
+          {sugOpen && (suggestions.length > 0 || cats.length > 0) && (
+            <ul className="sugg" role="listbox">
+              {cats.map(c => (
+                <li key={c}><button type="button" onMouseDown={() => { setSugOpen(false); nav(`/?cat=${encodeURIComponent(c)}`); }}>
+                  <span className="sg-ico">🗂️</span><span>{c}</span><small className="muted">Category</small></button></li>
+              ))}
+              {suggestions.map(p => (
+                <li key={p.id}><button type="button" onMouseDown={() => { setSugOpen(false); setQ(''); nav(`/product/${p.id}`); }}>
+                  <img src={p.images[0]} alt="" /><span>{p.name}</span><small>₹{Store.price(p)}</small></button></li>
+              ))}
+            </ul>
+          )}
         </form>
         <div className="actions">
           {enabled && !user && <Link to="/login" className="btn small signin">Sign in</Link>}
@@ -82,6 +119,7 @@ export default function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/pay/:id" element={<Pay />} />
           <Route path="/order/:id" element={<OrderDetail />} />
+          <Route path="/invoice/:id" element={<Invoice />} />
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/reviews" element={<ReviewsPage />} />

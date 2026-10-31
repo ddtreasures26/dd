@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import { REMOTE, api } from '../api';
 import { Store, money } from '../store';
 import { notify, toast } from '../ui';
 
 export default function Cart() {
   const nav = useNavigate();
-  const { enabled, user } = useAuth();
+  const { enabled, user, getToken } = useAuth();
   const { courier } = Store.data.settings;
   const lines = Store.cart()
     .map(l => ({ ...l, p: Store.product(l.id) }))
@@ -15,6 +16,9 @@ export default function Cart() {
 
   const [mode, setMode] = useState('pickup');
   const [zone, setZone] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [gift, setGift] = useState(false);
+  const [giftMsg, setGiftMsg] = useState('');
   const [f, setF] = useState(() => ({ name: user?.name || '', note: '', ...Store.profile(user?.email) }));
   const set = k => e => setF({ ...f, [k]: e.target.value });
 
@@ -25,26 +29,45 @@ export default function Cart() {
   const subtotal = lines.reduce((a, l) => a + Store.price(l.p) * l.qty, 0);
   const z = courier[zone];
   const shipping = mode === 'courier' && z ? Number(z.charge) : 0;
-  const total = subtotal + shipping;
+  const giftFee = gift ? Number(Store.data.settings.giftWrapFee) || 0 : 0;
+  const total = subtotal + shipping + giftFee;
 
   if (!lines.length) {
     return <div className="empty"><p>Your cart is empty 🛍️</p><Link className="btn" to="/">Start shopping</Link></div>;
   }
 
-  const place = e => {
+  const place = async e => {
     e.preventDefault();
+    if (busy) return;
     if (!/^\+?[\d\s-]{10,15}$/.test(f.phone)) return toast('Enter a valid phone number');
-    const order = {
-      id: Store.nextOrderId(),
-      date: new Date().toISOString(),
-      items: lines.map(l => ({ id: l.id, name: l.p.name, price: Store.price(l.p), qty: l.qty })),
-      subtotal, mode, courierZone: mode === 'courier' ? z?.name : '', courierCharge: shipping, total,
-      userEmail: user?.email || '', customer: { ...f }, status: 'Awaiting payment'
-    };
+    const customer = { name: f.name, phone: f.phone, address: f.address, city: f.city, pin: f.pin, note: f.note };
+    const courierZone = mode === 'courier' ? z?.name : '';
+    let order;
+    if (REMOTE) {
+      setBusy(true);
+      try {
+        order = (await api.placeOrder(await getToken(), {
+          items: lines.map(l => ({ id: l.id, qty: l.qty })), mode, courierZone,
+          giftWrap: gift, giftMessage: gift ? giftMsg : '', customer
+        })).order;
+      } catch (err) {
+        toast(err.message); Store.refresh(); setBusy(false);
+        if (err.code === 'auth') nav('/login?next=/cart');
+        return;
+      }
+      setBusy(false);
+    } else {
+      order = {
+        id: Store.nextOrderId(), date: new Date().toISOString(),
+        items: lines.map(l => ({ id: l.id, name: l.p.name, price: Store.price(l.p), qty: l.qty })),
+        subtotal, mode, courierZone, courierCharge: shipping, giftWrap: gift, giftFee, giftMessage: gift ? giftMsg : '', total,
+        userEmail: user?.email || '', customer, status: 'Awaiting payment'
+      };
+    }
     Store.setProfile(user?.email, { phone: f.phone, address: f.address, city: f.city, pin: f.pin });
-    Store.setOrders([order, ...Store.orders()]);
+    Store.upsertOrder(order);
     Store.setCart([]);
-    notify('Order created', `${order.id} · ${money(total)} — complete the payment to confirm.`);
+    notify('Order created', `${order.id} · ${money(order.total)} — complete the payment to confirm.`);
     nav(`/pay/${order.id}`);
   };
 
@@ -102,15 +125,22 @@ export default function Cart() {
         </>}
         <input placeholder="Note (optional)" value={f.note} onChange={set('note')} />
 
+        <label className="switch gift">
+          <input type="checkbox" checked={gift} onChange={e => setGift(e.target.checked)} />
+          <span>🎁 This is a gift — gift wrap {money(Store.data.settings.giftWrapFee)}</span>
+        </label>
+        {gift && <textarea rows={2} maxLength={300} placeholder="Message for the gift card" value={giftMsg} onChange={e => setGiftMsg(e.target.value)} />}
+
         <dl className="totals">
           <div><dt>Items ({lines.reduce((a, l) => a + l.qty, 0)})</dt><dd>{money(subtotal)}</dd></div>
           {mode === 'courier' && <div><dt>Courier ({z?.name})</dt><dd>{money(shipping)}</dd></div>}
+          {giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(giftFee)}</dd></div>}
           <div className="grand"><dt>Total</dt><dd>{money(total)}</dd></div>
         </dl>
         {mode === 'courier' && <p className="muted small">Courier charges depend on your location and will be confirmed with you once the order is confirmed.</p>}
         {enabled && !user
           ? <Link className="btn block-btn" to="/login?next=/cart">Sign in with Google to place order</Link>
-          : <button className="btn block-btn">Place order</button>}
+          : <button className="btn block-btn" disabled={busy}>{busy ? 'Placing order…' : 'Place order'}</button>}
       </form>
     </div>
   );

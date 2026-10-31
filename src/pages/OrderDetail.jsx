@@ -3,6 +3,8 @@ import { Store, money } from '../store';
 import { useAuth } from '../auth';
 import { Icon, Timeline, toast, waLink } from '../ui';
 import { orderText } from './Pay';
+import { REMOTE, api } from '../api';
+import { useOrderSync } from '../sync';
 import { reorder } from './Orders';
 
 export function OrderSummary({ o }) {
@@ -22,8 +24,10 @@ export function OrderSummary({ o }) {
       <dl className="totals">
         <div><dt>Items</dt><dd>{money(o.subtotal)}</dd></div>
         {o.mode === 'courier' && <div><dt>Courier ({o.courierZone})</dt><dd>{money(o.courierCharge)}</dd></div>}
+        {o.giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(o.giftFee)}</dd></div>}
         <div className="grand"><dt>Total</dt><dd>{money(o.total)}</dd></div>
       </dl>
+      {o.giftWrap && o.giftMessage && <p className="notice small">🎁 Gift message: “{o.giftMessage}”</p>}
       {o.mode === 'courier' && <p className="muted small">Courier charge is an estimate and will be confirmed with you on WhatsApp.</p>}
     </section>
   );
@@ -31,8 +35,9 @@ export function OrderSummary({ o }) {
 
 export default function OrderDetail() {
   const { id } = useParams();
-  const { enabled, user } = useAuth();
+  const { enabled, user, getToken } = useAuth();
   const nav = useNavigate();
+  useOrderSync();
   const o = Store.orders().find(x => x.id === id);
   const s = Store.data.settings;
 
@@ -40,9 +45,12 @@ export default function OrderDetail() {
   if (!o || (o.userEmail || '') !== (user?.email || '')) return <div className="empty">Order not found. <Link to="/orders">My orders</Link></div>;
 
   const c = o.customer;
-  const cancel = () => {
+  const cancel = async () => {
     if (!confirm('Cancel this order?')) return;
-    Store.setOrders(Store.orders().map(x => x.id === o.id ? { ...x, status: 'Cancelled' } : x));
+    if (REMOTE) {
+      try { Store.upsertOrder((await api.cancelOrder(await getToken(), o.id)).order); }
+      catch (e) { return toast(e.message); }
+    } else Store.setOrders(Store.orders().map(x => x.id === o.id ? { ...x, status: 'Cancelled' } : x));
     toast('Order cancelled');
   };
 
@@ -70,6 +78,7 @@ export default function OrderDetail() {
       <div className="actions-bar">
         {o.status === 'Awaiting payment' && <Link className="btn" to={`/pay/${o.id}`}>Pay {money(o.total)}</Link>}
         <a className="btn wa" href={waLink(s.whatsapp, orderText(o, o.status !== 'Awaiting payment'))} target="_blank" rel="noreferrer"><Icon name="chat" size={18} /> WhatsApp us</a>
+        {o.status !== 'Cancelled' && <Link className="btn ghost" to={`/invoice/${o.id}`}>Invoice</Link>}
         <button className="btn ghost" onClick={() => reorder(o, nav)}>Reorder</button>
         {o.status === 'Awaiting payment' && <button className="btn ghost danger" onClick={cancel}>Cancel order</button>}
       </div>

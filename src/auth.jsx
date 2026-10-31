@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ADMIN_EMAIL, AUTH_ENABLED, GOOGLE_CLIENT_ID } from './config';
+import { Store } from './store';
 
 const KEY = 'ddt.user.v1';
 const Ctx = createContext(null);
@@ -31,6 +32,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(readUser);
   const [error, setError] = useState('');
   const initialised = useRef(false);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const waiter = useRef(null);
 
   const handleCredential = useCallback(resp => {
     try {
@@ -39,6 +43,7 @@ export function AuthProvider({ children }) {
       const u = { email: p.email.toLowerCase(), name: p.name || p.email, picture: p.picture || '', credential: resp.credential, exp: p.exp * 1000 };
       localStorage.setItem(KEY, JSON.stringify(u));
       setUser(u); setError('');
+      waiter.current?.(resp.credential); waiter.current = null;
     } catch (e) { setError(e.message); }
   }, []);
 
@@ -47,7 +52,7 @@ export function AuthProvider({ children }) {
     if (!AUTH_ENABLED) return null;
     const g = await loadGIS();
     if (!initialised.current) {
-      g.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredential, auto_select: false, use_fedcm_for_prompt: true });
+      g.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredential, auto_select: true, use_fedcm_for_prompt: true });
       initialised.current = true;
     }
     return g;
@@ -60,8 +65,23 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, [init]);
 
+  /** A valid Google ID token for API calls. Google tokens last ~1 hour, so renew quietly when close to expiry. */
+  const getToken = useCallback(async () => {
+    const u = userRef.current;
+    if (!u) throw Object.assign(new Error('Please sign in.'), { code: 'auth' });
+    if (u.exp - Date.now() > 90_000) return u.credential;
+    const g = await init();
+    return new Promise((resolve, reject) => {
+      const fail = () => { waiter.current = null; reject(Object.assign(new Error('Your session expired. Please sign in again.'), { code: 'auth' })); };
+      const t = setTimeout(fail, 12000);
+      waiter.current = c => { clearTimeout(t); resolve(c); };
+      g.accounts.id.prompt(n => { if (n.isNotDisplayed?.() || n.isSkippedMoment?.()) { clearTimeout(t); fail(); } });
+    });
+  }, [init]);
+  useEffect(() => { Store.setTokenGetter(getToken); }, [getToken]);
+
   const value = {
-    enabled: AUTH_ENABLED, user, error, init, signOut,
+    enabled: AUTH_ENABLED, user, error, init, signOut, getToken,
     isAdmin: Boolean(user && user.email === ADMIN_EMAIL.toLowerCase())
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

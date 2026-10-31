@@ -8,6 +8,7 @@
 const CLIENT_ID = '566285685011-uok9mas25n93gjm55vmcdk23aq7bpcsg.apps.googleusercontent.com';
 const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
 const SHOP_NAME = 'DD_Treasure26';
+const VERSION = '2026-11-01-no-email'; // shown by the ping URL so you can tell which code is live
 const FOLDER_NAME = 'DDTreasure26-Data';
 const TZ = 'Asia/Kolkata';
 const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
@@ -18,7 +19,7 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     if (p.action === 'catalog') return json_(publicData_());
-    return json_({ ok: true, service: SHOP_NAME });
+    return json_({ ok: true, service: SHOP_NAME, version: VERSION });
   } catch (err) { return json_(errOut_(err)); }
 }
 

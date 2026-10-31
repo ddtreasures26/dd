@@ -50,11 +50,11 @@ const seed = () => ({
   ],
   categories: ['Necklaces', 'Bracelets', 'Earrings', 'Rings', 'Hair accessories'],
   products: [
-    { id: 'p1', name: 'Pearl Heart Necklace', category: 'Necklaces', price: 349, offerPrice: 299, qty: 12, offer: true, images: [art('📿', '#fff1e6', '#f6c1cf')], description: 'Freshwater-look pearls with a tiny heart charm. Adjustable length.' },
-    { id: 'p2', name: 'Pink Bow Hair Clip', category: 'Hair accessories', price: 129, offerPrice: 0, qty: 8, offer: false, images: [art('🎀', '#ffe3ec', '#f4a6bd')], description: 'Soft satin bow on a strong metal clip.' },
+    { id: 'p1', createdAt: Date.now() - 2 * 864e5, name: 'Pearl Heart Necklace', category: 'Necklaces', price: 349, offerPrice: 299, qty: 12, offer: true, images: [art('📿', '#fff1e6', '#f6c1cf')], description: 'Freshwater-look pearls with a tiny heart charm. Adjustable length.' },
+    { id: 'p2', createdAt: Date.now() - 6 * 864e5, name: 'Pink Bow Hair Clip', category: 'Hair accessories', price: 129, offerPrice: 0, qty: 8, offer: false, images: [art('🎀', '#ffe3ec', '#f4a6bd')], description: 'Soft satin bow on a strong metal clip.' },
     { id: 'p3', name: 'Pearl Charm Bracelet', category: 'Bracelets', price: 249, offerPrice: 0, qty: 20, offer: false, images: [art('🤍', '#f7ede2', '#e9d3b8')], options: [{ name: 'Size', values: ['S', 'M', 'L'] }], description: 'Beaded bracelet with a dainty charm and gold-tone clasp.' },
     { id: 'p4', name: 'Sparkle Ring Set', category: 'Rings', price: 399, offerPrice: 349, qty: 5, offer: true, images: [art('💍', '#fdeccf', '#f1c27d')], options: [{ name: 'Ring size', values: ['6', '7', '8', '9', '10'] }], description: 'Set of three stackable rings with a crystal accent.' },
-    { id: 'p5', name: 'Pearl Drop Earrings', category: 'Earrings', price: 199, offerPrice: 0, qty: 30, offer: false, images: [art('✨', '#fbe9f1', '#eab7cf')], description: 'Lightweight pearl drops, hypoallergenic hooks.' },
+    { id: 'p5', createdAt: Date.now() - 20 * 864e5, name: 'Pearl Drop Earrings', category: 'Earrings', price: 199, offerPrice: 0, qty: 30, offer: false, images: [art('✨', '#fbe9f1', '#eab7cf')], description: 'Lightweight pearl drops, hypoallergenic hooks.' },
     { id: 'p6', name: 'Rose Gold Charm Bracelet', category: 'Bracelets', price: 299, offerPrice: 0, qty: 0, offer: false, images: [art('🌸', '#fde7e0', '#f2b5a4')], description: 'Currently sold out – ask on WhatsApp for a custom order.' }
   ]
 });
@@ -77,6 +77,7 @@ let published = !REMOTE; // has the admin ever published a catalog to Drive?
 let lastError = '';
 let adminOrders = [];
 let adminCoupons = [];
+let backupInfo = { last: '', auto: false };
 let tokenGetter = async () => { throw new Error('Please sign in.'); };
 
 const isInlineImage = v => typeof v === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(v);
@@ -113,6 +114,8 @@ export const Store = {
   get lastError() { return lastError; },
   get adminOrders() { return adminOrders; },
   get adminCoupons() { return adminCoupons; },
+  get backupInfo() { return backupInfo; },
+  setBackup(info) { backupInfo = { ...backupInfo, ...info }; emit(); },
   setCoupons(list) { adminCoupons = list; emit(); },
   setTokenGetter(fn) { tokenGetter = fn; },
   setReviews(list) { data.reviews = list; Store.persist(); },
@@ -165,6 +168,7 @@ export const Store = {
     const d = await api.adminData(await tokenGetter());
     adminOrders = d.orders;
     adminCoupons = d.coupons || [];
+    backupInfo = { last: d.lastBackup || '', auto: !!d.autoBackup };
     data.reviews = d.reviews;
     Store.persist();
     return d.orders;

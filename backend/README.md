@@ -32,6 +32,30 @@ When you change `Code.gs` later: **Deploy → Manage deployments → ✏ Edit �
 - Stock drops when an order is moved to **Confirmed** (and returns if it is later cancelled or moved back).
 - **No emails are sent.** Customers see their order status in the app (Profile and My orders); orders arrive in Admin → Orders and on WhatsApp.
 
+## Spam protection
+
+Every request already needs a verified Google sign-in. On top of that the server enforces, per account:
+
+| Action | Limit |
+| --- | --- |
+| Orders | 6 attempts per 10 minutes, at most 5 unpaid orders at once, 10 orders per day |
+| Reviews | 6 attempts per hour, 6 new reviews per day, no web links, no repeating the same text |
+| Coupon codes | 15 tries per 10 minutes (stops code guessing) |
+
+Reviews from customers who have a confirmed order (for that product) are published straight away and get a **Verified buyer** badge. Reviews from anyone else are saved as **awaiting approval** and only appear after you press *Approve* in Admin → Reviews.
+
+## Automatic backup
+
+The script copies `catalog.json`, `orders.json`, `reviews.json` and `coupons.json` into `DDTreasure26-Data/backups/<date>/` and keeps the newest 30 days.
+
+To switch on the **daily** backup (about 2 am India time), once:
+
+1. In the Apps Script editor choose the function **`setupDailyBackup`** in the toolbar and click **Run**. Approve the extra permission (it lets the script create its own timer).
+2. **Deploy → Manage deployments → ✏ → Version: New version → Deploy.**
+3. Open Admin → Backup. It should say *Daily backup is ON*.
+
+You can also press **Back up to Drive now** in Admin → Backup at any time. To restore, open the dated backup folder in Drive, copy the file you need, and replace the matching file in `DDTreasure26-Data` (or use *Restore from file* in the app for the catalog).
+
 ## Limits to know
 
 - Free Apps Script quotas are generous for a small shop; each request takes roughly 0.5-2 s.

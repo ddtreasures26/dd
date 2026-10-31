@@ -3,10 +3,21 @@ import { Link } from 'react-router-dom';
 import { REMOTE, api } from '../api';
 import { Store, fileToDataURL, money, useStore } from '../store';
 import { ADMIN_EMAIL } from '../config';
-import { Stars, notify, toast, Img } from '../ui';
+import { Stars, notify, toast, waLink, Img } from '../ui';
 import { GoogleButton, useAuth } from '../auth';
 
-const TABS = [['products', '🛍️ Products'], ['categories', '🗂️ Categories'], ['home', '🏠 Home & promos'], ['shop', '🏪 Shop details'], ['courier', '📮 Courier'], ['coupons', '🏷️ Coupons'], ['orders', '📦 Orders'], ['analytics', '📊 Analytics'], ['reviews', '⭐ Reviews'], ['data', '💾 Backup']];
+const SECTIONS = [
+  { k: 'orders', label: 'Orders', icon: '📦', main: true },
+  { k: 'products', label: 'Products', icon: '🛍️', main: true },
+  { k: 'coupons', label: 'Coupons', icon: '🏷️', main: true },
+  { k: 'analytics', label: 'Insights', icon: '📊', main: true },
+  { k: 'categories', label: 'Categories', icon: '🗂️' },
+  { k: 'home', label: 'Home & promos', icon: '🏠' },
+  { k: 'shop', label: 'Shop details', icon: '🏪' },
+  { k: 'courier', label: 'Courier', icon: '📮' },
+  { k: 'reviews', label: 'Reviews', icon: '⭐' },
+  { k: 'data', label: 'Backup', icon: '💾' }
+];
 
 const save = async scope => {
   const ok = await Store.commit(scope);
@@ -18,7 +29,10 @@ export default function Admin() {
   const auth = useAuth();
   const [ok, setOk] = useState(() => sessionStorage.getItem('ddt.admin') === '1');
   const [pin, setPin] = useState('');
-  const [tab, setTab] = useState('products');
+  const [tab, setTab] = useState(() => {
+    try { const t = sessionStorage.getItem('ddt.admin.tab'); return SECTIONS.some(x => x.k === t) ? t : 'orders'; } catch { return 'orders'; }
+  });
+  const [more, setMore] = useState(false);
   const [ready, setReady] = useState(!REMOTE);
 
   // Pull the latest catalog, every order and every review (incl. hidden) before the admin edits anything.
@@ -60,37 +74,86 @@ export default function Admin() {
 
   if (!ready) return <div className="empty">Loading shop data…</div>;
 
+  const go = k => { setTab(k); setMore(false); try { sessionStorage.setItem('ddt.admin.tab', k); } catch { /* ignore */ } window.scrollTo(0, 0); };
+  const logout = () => { sessionStorage.removeItem('ddt.admin'); setOk(false); auth.signOut(); };
+  const orders = REMOTE ? Store.adminOrders : Store.orders();
+  const openOrders = orders.filter(o => o.status === 'Awaiting payment' || o.status === 'Payment sent').length;
+  const pendingReviews = Store.data.reviews.filter(r => r.pending).length;
+  const badge = k => (k === 'orders' ? openOrders : k === 'reviews' ? pendingReviews : 0);
+  const current = SECTIONS.find(x => x.k === tab);
+  const rest = SECTIONS.filter(x => !x.main);
+  const moreCount = badge('reviews');
+
   return (
-    <div className="admin">
-      <div className="row between">
-        <h1>Admin</h1>
-        <button className="btn ghost small" onClick={() => { sessionStorage.removeItem('ddt.admin'); setOk(false); auth.signOut(); }}>Log out</button>
-      </div>
-      <div className="stats four">
-        <div className="card stat"><b>{Store.data.products.length}</b><small>Products</small></div>
-        <div className="card stat"><b>{Store.data.products.filter(p => p.qty <= Store.data.settings.lowStockAt).length}</b><small>Low / out of stock</small></div>
-        <div className="card stat"><b>{(REMOTE ? Store.adminOrders : Store.orders()).filter(o => o.status === 'Awaiting payment' || o.status === 'Payment sent').length}</b><small>Open orders</small></div>
-        <div className="card stat"><b>{Store.reviews('all').length}</b><small>Reviews</small></div>
-      </div>
-      {REMOTE && !Store.published && (
-        <div className="notice">
-          Your shop is empty online, so customers see nothing yet. Add products, or publish the starter samples to begin.{' '}
-          <button className="btn small" onClick={async () => { Store.reset(); await save(); }}>Publish starter products</button>
+    <div className="admin-shell">
+      <aside className="admin-nav" aria-label="Admin sections">
+        {SECTIONS.map(x => (
+          <button key={x.k} className={tab === x.k ? 'on' : ''} onClick={() => go(x.k)} aria-current={tab === x.k ? 'page' : undefined}>
+            <span className="ni">{x.icon}</span><span className="grow">{x.label}</span>{badge(x.k) > 0 && <i className="nb">{badge(x.k)}</i>}
+          </button>
+        ))}
+        <button className="btn ghost small" onClick={logout}>Log out</button>
+      </aside>
+
+      <section className="admin-main">
+        <div className="admin-head">
+          <h1>{current.icon} {current.label}</h1>
+          <button className="btn ghost small only-m" onClick={logout}>Log out</button>
+        </div>
+
+        {(tab === 'orders' || tab === 'products') && (
+          <div className="stats four compact">
+            <div className="card stat"><b>{Store.data.products.length}</b><small>Products</small></div>
+            <div className="card stat"><b>{Store.data.products.filter(p => p.qty <= Store.data.settings.lowStockAt).length}</b><small>Low stock</small></div>
+            <div className="card stat"><b>{openOrders}</b><small>To do</small></div>
+            <div className="card stat"><b>{Store.reviews('all').length}</b><small>Reviews</small></div>
+          </div>
+        )}
+        {REMOTE && !Store.published && (
+          <div className="notice">
+            Your shop is empty online, so customers see nothing yet. Add products, or publish the starter samples to begin.{' '}
+            <button className="btn small" onClick={async () => { Store.reset(); await save(); }}>Publish starter products</button>
+          </div>
+        )}
+
+        {tab === 'products' && <Products />}
+        {tab === 'categories' && <Categories />}
+        {tab === 'home' && <HomeSettings />}
+        {tab === 'shop' && <ShopSettings />}
+        {tab === 'courier' && <Courier />}
+        {tab === 'coupons' && <Coupons />}
+        {tab === 'orders' && <AdminOrders />}
+        {tab === 'analytics' && <Analytics />}
+        {tab === 'reviews' && <AdminReviews />}
+        {tab === 'data' && <Backup />}
+      </section>
+
+      <nav className="admin-tabbar" aria-label="Admin sections">
+        {SECTIONS.filter(x => x.main).map(x => (
+          <button key={x.k} className={tab === x.k ? 'on' : ''} onClick={() => go(x.k)} aria-current={tab === x.k ? 'page' : undefined}>
+            <span className="ti">{x.icon}{badge(x.k) > 0 && <i className="nb">{badge(x.k)}</i>}</span><small>{x.label}</small>
+          </button>
+        ))}
+        <button className={rest.some(x => x.k === tab) ? 'on' : ''} onClick={() => setMore(true)}>
+          <span className="ti">☰{moreCount > 0 && <i className="nb">{moreCount}</i>}</span><small>More</small>
+        </button>
+      </nav>
+
+      {more && (
+        <div className="sheet-backdrop" onClick={() => setMore(false)}>
+          <div className="sheet" role="dialog" aria-label="More sections" onClick={e => e.stopPropagation()}>
+            <div className="row between"><h3>More</h3><button className="link" onClick={() => setMore(false)}>Close</button></div>
+            <div className="sheet-grid">
+              {rest.map(x => (
+                <button key={x.k} className={tab === x.k ? 'on' : ''} onClick={() => go(x.k)}>
+                  <span className="ni">{x.icon}</span><span>{x.label}</span>{badge(x.k) > 0 && <i className="nb">{badge(x.k)}</i>}
+                </button>
+              ))}
+            </div>
+            <button className="btn ghost" onClick={logout}>Log out</button>
+          </div>
         </div>
       )}
-      <div className="chips">
-        {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
-      </div>
-      {tab === 'products' && <Products />}
-      {tab === 'categories' && <Categories />}
-      {tab === 'home' && <HomeSettings />}
-      {tab === 'shop' && <ShopSettings />}
-      {tab === 'courier' && <Courier />}
-      {tab === 'coupons' && <Coupons />}
-      {tab === 'orders' && <AdminOrders />}
-      {tab === 'analytics' && <Analytics />}
-      {tab === 'reviews' && <AdminReviews />}
-      {tab === 'data' && <Backup />}
     </div>
   );
 }
@@ -323,15 +386,43 @@ const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'D
 function ChargeEditor({ o, onSave }) {
   const [v, setV] = useState(o.courierCharge);
   return (
-    <div className="row">
-      <label className="grow">Courier charge ₹ (confirm with customer)<input type="number" min="0" value={v} onChange={e => setV(e.target.value)} /></label>
-      <button className="btn small ghost" onClick={() => onSave(Number(v))}>Update</button>
-    </div>
+    <label className="charge">Courier charge (₹): confirm it with the customer
+      <div className="row nowrap">
+        <input type="number" min="0" value={v} onChange={e => setV(e.target.value)} />
+        <button className="btn small ghost" onClick={() => onSave(Number(v))}>Update</button>
+      </div>
+    </label>
   );
 }
 
+/** Indian mobile numbers are stored without a country code, wa.me needs one. */
+const waNumber = phone => {
+  const d = String(phone).replace(/\D/g, '');
+  return d.length === 10 ? '91' + d : d.length === 11 && d.startsWith('0') ? '91' + d.slice(1) : d;
+};
+const statusMessage = o => {
+  const note = {
+    'Payment sent': 'We have noted your payment and will confirm it shortly.',
+    Confirmed: 'Your order is confirmed. We are getting it ready with love.',
+    Shipped: 'Your order has been shipped.',
+    Delivered: 'Your order has been delivered. We hope you love it!',
+    Cancelled: 'Your order has been cancelled.',
+    'Awaiting payment': 'We are waiting for your payment.'
+  }[o.status] || '';
+  const extra = o.mode === 'courier' ? ` Courier charge ${money(o.courierCharge)}, total ${money(o.total)}.` : ` Total ${money(o.total)}.`;
+  return `Hi ${o.customer.name}, this is ${Store.data.settings.shopName} about your order ${o.id}. ${note}${extra}`;
+};
+
+const ORDER_FILTERS = [
+  ['open', 'To do', o => o.status === 'Awaiting payment' || o.status === 'Payment sent'],
+  ['active', 'In progress', o => o.status === 'Confirmed' || o.status === 'Shipped'],
+  ['done', 'Completed', o => o.status === 'Delivered' || o.status === 'Cancelled'],
+  ['all', 'All', () => true]
+];
+
 function AdminOrders() {
   const { getToken } = useAuth();
+  const [filter, setFilter] = useState('open');
   const orders = REMOTE ? Store.adminOrders : Store.orders();
 
   // check for new orders every 45 s while this tab is open
@@ -353,7 +444,7 @@ function AdminOrders() {
   const patch = async (o, p) => {
     if (!REMOTE) {
       Store.setOrders(Store.orders().map(x => x.id !== o.id ? x : {
-        ...x, ...p, ...(p.courierCharge != null ? { total: x.subtotal + p.courierCharge + (x.giftFee || 0) } : {})
+        ...x, ...p, ...(p.courierCharge != null ? { total: x.subtotal - (x.discount || 0) + p.courierCharge + (x.giftFee || 0) } : {})
       }));
       return;
     }
@@ -364,34 +455,74 @@ function AdminOrders() {
     } catch (e) { toast(e.message); }
   };
 
+  const match = ORDER_FILTERS.find(f => f[0] === filter)[2];
+  const shown = orders.filter(match);
+
   return (
     <>
       <div className="row between">
         <p className="muted small" style={{ margin: 0 }}>
-          {REMOTE ? 'Live from Drive. Confirming an order reduces stock and updates the order status shown to the customer.' : 'Orders placed on this device (connect the backend to receive customers\' orders here).'}
+          {REMOTE ? 'Live from Drive. Confirming an order reduces stock and updates the status the customer sees.' : 'Orders placed on this device (connect the backend to receive customers\' orders here).'}
         </p>
         {REMOTE && <button className="btn small ghost" onClick={() => Store.loadAdminData().then(() => toast('Refreshed')).catch(e => toast(e.message))}>Refresh</button>}
       </div>
-      {orders.map(o => (
-        <div className="card order" key={o.id}>
-          <div className="row between"><b>{o.id}</b><b>{money(o.total)}</b></div>
-          <small className="muted">
-            {o.customer.name} · {o.customer.phone}{o.userEmail ? ` · ${o.userEmail}` : ''}
-            {o.mode === 'courier' ? ` · ${o.customer.address}, ${o.customer.city} ${o.customer.pin}` : ' · pickup'}
-          </small>
-          <ul>{o.items.map((i, k) => <li key={k}>{i.name}{i.variant ? ` (${i.variant})` : ''} × {i.qty}</li>)}</ul>
+      <div className="chips" role="tablist" aria-label="Order filter">
+        {ORDER_FILTERS.map(([k, label, fn]) => (
+          <button key={k} role="tab" aria-selected={filter === k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>
+            {label} <small>({orders.filter(fn).length})</small>
+          </button>
+        ))}
+      </div>
+
+      {shown.map(o => (
+        <article className="card order admin-order" key={o.id}>
+          <div className="row between">
+            <b>{o.id}</b>
+            <span className={`pill ${o.status.replace(/\s/g, '').toLowerCase()}`}>{o.status}</span>
+          </div>
+          <div className="row between">
+            <small className="muted">{new Date(o.date).toLocaleString()}</small>
+            <b className="amt">{money(o.total)}</b>
+          </div>
+
+          <div className="cust">
+            <b>{o.customer.name}</b>
+            <a href={`tel:${o.customer.phone}`}>{o.customer.phone}</a>
+            <span className="muted small">
+              {o.mode === 'courier' ? `📮 ${o.customer.address}, ${o.customer.city} – ${o.customer.pin} (${o.courierZone})` : '🤝 Pickup / hand over'}
+            </span>
+            {o.customer.note && <span className="muted small">Note: {o.customer.note}</span>}
+          </div>
+
+          <ul className="oitems">
+            {o.items.map((i, k) => (
+              <li key={k}><span>{i.name}{i.variant && <small className="opt">{i.variant}</small>}</span><span className="muted">× {i.qty}</span></li>
+            ))}
+          </ul>
           {o.giftWrap && <p className="notice small">🎁 Gift wrap{o.giftMessage ? `: “${o.giftMessage}”` : ''}</p>}
-          {o.customer.note && <small className="muted">Note: {o.customer.note}</small>}
+
+          <dl className="totals compact">
+            <div><dt>Items</dt><dd>{money(o.subtotal)}</dd></div>
+            {o.discount > 0 && <div className="disc"><dt>Coupon {o.coupon?.code}</dt><dd>−{money(o.discount)}</dd></div>}
+            {o.mode === 'courier' && <div><dt>Courier</dt><dd>{money(o.courierCharge)}</dd></div>}
+            {o.giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(o.giftFee)}</dd></div>}
+            <div className="grand"><dt>Total</dt><dd>{money(o.total)}</dd></div>
+          </dl>
+
           {o.mode === 'courier' && <ChargeEditor key={o.courierCharge} o={o} onSave={c => patch(o, { courierCharge: c })} />}
-          <div className="row">
-            <select className="grow" value={o.status} onChange={e => patch(o, { status: e.target.value })}>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
+
+          <label>Order status
+            <select value={o.status} onChange={e => patch(o, { status: e.target.value })}>
+              {STATUSES.map(st => <option key={st}>{st}</option>)}
             </select>
+          </label>
+          <div className="row actions-row">
+            <a className="btn small wa" href={waLink(waNumber(o.customer.phone), statusMessage(o))} target="_blank" rel="noreferrer">💬 WhatsApp customer</a>
             <Link className="btn small ghost" to={`/invoice/${o.id}`}>Invoice</Link>
           </div>
-        </div>
+        </article>
       ))}
-      {!orders.length && <div className="empty">No orders yet.</div>}
+      {!shown.length && <div className="empty">{orders.length ? 'Nothing in this list.' : 'No orders yet.'}</div>}
     </>
   );
 }
@@ -479,26 +610,55 @@ function Analytics() {
 /* ---------- Backup ---------- */
 function Backup() {
   const ref = useRef();
+  const { getToken } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const info = Store.backupInfo;
   const download = () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
     a.download = 'ddtreasure-catalog.json'; a.click();
   };
+  const backupNow = async () => {
+    setBusy(true);
+    try { const r = await api.backupNow(await getToken()); Store.setBackup({ last: r.at }); toast('Backed up to Drive ✓'); }
+    catch (e) { toast(e.message); }
+    setBusy(false);
+  };
   return (
-    <div className="card form">
-      <h2>Backup &amp; restore</h2>
-      <p className="muted">Data is stored in this browser for now. Download a backup regularly; Google Drive sync ({ADMIN_EMAIL}) replaces this in the next step.</p>
-      <div className="row">
-        <button className="btn" onClick={download}>Download backup</button>
-        {REMOTE && <button className="btn ghost" onClick={() => save()}>Publish to Drive now</button>}
-        <button className="btn ghost" onClick={() => ref.current.click()}>Restore from file</button>
-        <button className="btn ghost danger" onClick={() => { if (confirm('Reset everything to the sample data?')) { Store.reset(); save(); } }}>Reset to sample</button>
-      </div>
-      <input ref={ref} hidden type="file" accept="application/json" onChange={async e => {
-        try { Store.importJSON(await e.target.files[0].text()); toast('Restored ✓'); } catch (err) { toast(err.message); }
-        e.target.value = '';
-      }} />
-    </div>
+    <>
+      {REMOTE && (
+        <section className="card form">
+          <h2>Automatic Drive backup</h2>
+          <p style={{ margin: 0 }}><span className={`pill ${info.auto ? 'confirmed' : 'cancelled'}`}>{info.auto ? 'Daily backup is ON' : 'Daily backup is OFF'}</span></p>
+          <p className="muted" style={{ margin: 0 }}>
+            Last backup: <b>{info.last ? new Date(info.last).toLocaleString() : 'none yet'}</b>. Your products, orders, reviews and coupons are copied
+            into <b>DDTreasure26-Data → backups</b> in your Drive, one folder per day, and the newest 30 days are kept.
+          </p>
+          {!info.auto && (
+            <ol className="steps small">
+              <li>Open your Apps Script project.</li>
+              <li>In the toolbar choose the function <b>setupDailyBackup</b> and click <b>Run</b> (approve the permission once).</li>
+              <li>Then <b>Deploy → Manage deployments → ✏ → New version → Deploy</b>, and refresh this page.</li>
+            </ol>
+          )}
+          <button className="btn" disabled={busy} onClick={backupNow}>{busy ? 'Backing up…' : 'Back up to Drive now'}</button>
+        </section>
+      )}
+      <section className="card form">
+        <h2>Copy &amp; restore</h2>
+        <p className="muted" style={{ margin: 0 }}>Download a copy of your catalog to keep on your computer, or restore one from a file.</p>
+        <div className="row">
+          <button className="btn" onClick={download}>Download copy</button>
+          {REMOTE && <button className="btn ghost" onClick={() => save()}>Publish to Drive now</button>}
+          <button className="btn ghost" onClick={() => ref.current.click()}>Restore from file</button>
+          <button className="btn ghost danger" onClick={() => { if (confirm('Reset everything to the sample data?')) { Store.reset(); save(); } }}>Reset to sample</button>
+        </div>
+        <input ref={ref} hidden type="file" accept="application/json" onChange={async e => {
+          try { Store.importJSON(await e.target.files[0].text()); toast('Restored ✓'); } catch (err) { toast(err.message); }
+          e.target.value = '';
+        }} />
+      </section>
+    </>
   );
 }
 
@@ -531,10 +691,10 @@ function AdminReviews() {
       {reviews.map(r => (
         <div className="card order" key={r.id}>
           <div className="row between"><b>{r.name}</b><Stars value={r.rating} /></div>
-          <small className="muted">{pname(r.productId)} · {new Date(r.date).toLocaleDateString()}{r.visible ? '' : ' · hidden'}</small>
+          <small className="muted">{pname(r.productId)} · {new Date(r.date).toLocaleDateString()}{r.pending ? ' · awaiting approval' : r.visible ? '' : ' · hidden'}{r.verified ? ' · ✓ verified buyer' : ''}</small>
           <p style={{ margin: 0 }}>{r.text}</p>
           <div className="row">
-            <button className="btn ghost small" onClick={() => { r.visible = !r.visible; save('reviews'); }}>{r.visible ? 'Hide' : 'Show'}</button>
+            <button className="btn ghost small" onClick={() => { r.visible = !r.visible; r.pending = false; save('reviews'); }}>{r.pending ? 'Approve' : r.visible ? 'Hide' : 'Show'}</button>
             <button className="btn ghost small danger" onClick={() => { if (confirm('Delete this review?')) { Store.data.reviews = reviews.filter(x => x.id !== r.id); save('reviews'); } }}>Delete</button>
           </div>
         </div>

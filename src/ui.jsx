@@ -18,6 +18,9 @@ export function Toast() {
   return <div id="toast" className={msg ? 'show' : ''} role="status">{msg}</div>;
 }
 
+/** Added to the shop in the last 14 days. */
+export const isNew = p => Boolean(p.createdAt) && Date.now() - p.createdAt < 14 * 864e5;
+
 export const stockLabel = p => {
   const low = Store.data.settings.lowStockAt;
   if (p.qty <= 0) return { text: 'Sold out', cls: 'out' };
@@ -44,6 +47,7 @@ export function ProductCard({ p, onOpen }) {
       <div className="thumb">
         <Img src={p.images[0]} w={500} alt={p.name} loading="lazy" />
         {off > 0 && <span className="badge">{off}% off</span>}
+        {off === 0 && isNew(p) && <span className="badge new">New</span>}
         {st.cls === 'out' && <span className="badge dark">Sold out</span>}
       </div>
       <div className="info">
@@ -98,14 +102,15 @@ export function Reviews({ productId = null, productName = '' }) {
   const submit = async e => {
     e.preventDefault();
     const r = { productId, name: f.name.trim(), rating: f.rating, text: f.text.trim() };
+    let pending = false;
     if (REMOTE) {
-      try { Store.setReviews((await api.addReview(await getToken(), r)).reviews); }
+      try { const d = await api.addReview(await getToken(), r); Store.setReviews(d.reviews); pending = !!d.pending; }
       catch (err) { return toast(err.message); }
     } else Store.addReview(r);
     try { localStorage.setItem('ddt.reviewer', r.name); } catch { /* ignore */ }
-    setSent(r);
+    setSent({ ...r, pending });
     setF({ ...f, text: '', rating: 5 });
-    toast('Thank you for your review 💗');
+    toast(pending ? 'Thanks! We will publish your review after a quick check.' : 'Thank you for your review 💗');
   };
   const wa = r => waLink(Store.data.settings.whatsapp,
     `Review for ${productName ? `"${productName}"` : 'DD_Treasure26'}\n${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}\n"${r.text}"\n— ${r.name}`);
@@ -135,17 +140,15 @@ export function Reviews({ productId = null, productName = '' }) {
         <input required maxLength={40} placeholder="Your name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
         <textarea required rows={3} maxLength={600} placeholder="Write your review…" value={f.text} onChange={e => setF({ ...f, text: e.target.value })} />
         <button className="btn">Submit review</button>
-        {sent && (
-          <p className="notice small">
-            Saved. Please also <a href={wa(sent)} target="_blank" rel="noreferrer">send it to us on WhatsApp</a> so we can publish it for everyone.
-          </p>
-        )}
+        {sent && (REMOTE
+          ? <p className="notice small">{sent.pending ? 'Thanks! We will publish your review after a quick check. Reviews from customers who bought the item appear straight away.' : 'Your review is live. Thank you!'}</p>
+          : <p className="notice small">Saved. Please also <a href={wa(sent)} target="_blank" rel="noreferrer">send it to us on WhatsApp</a> so we can publish it for everyone.</p>)}
       </form>
 
       {list.length ? list.map(r => (
         <div className="card review" key={r.id}>
           <div className="row between">
-            <b>{r.name}</b>
+            <span><b>{r.name}</b>{r.verified && <small className="vbadge">✓ Verified buyer</small>}</span>
             <Stars value={r.rating} />
           </div>
           {!productId && r.productId && Store.product(r.productId) && (
@@ -170,6 +173,8 @@ const ICONS = {
   check: <path d="M5 12l5 5 9-10" />,
   copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 012-2h9" /></>,
   share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4" /></>,
+  grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
+  filter: <path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" />,
   chat: <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z" />
 };
 export const Icon = ({ name, size = 22 }) => (

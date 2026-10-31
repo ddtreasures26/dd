@@ -21,6 +21,7 @@ export const api = {
   cancelOrder: (t, id) => post('cancelOrder', t, { id }),
   addReview: (t, review) => post('addReview', t, review),
   adminData: t => post('adminData', t),
+  backupNow: t => post('backupNow', t),
   checkCoupon: (t, items, code) => post('checkCoupon', t, { items, code }),
   saveCoupons: (t, coupons) => post('saveCoupons', t, { coupons }),
   saveCatalog: (t, catalog) => post('saveCatalog', t, { catalog }),

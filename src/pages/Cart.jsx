@@ -140,61 +140,83 @@ export default function Cart() {
         })}
       </section>
 
-      <form className="card summary" onSubmit={place}>
-        <h2>Order summary</h2>
+      <form id="checkout" className="card summary" onSubmit={place}>
+        <h2>Checkout</h2>
 
-        <div className="seg">
-          <button type="button" className={mode === 'pickup' ? 'on' : ''} onClick={() => setMode('pickup')}>🤝 Pickup / hand over</button>
-          <button type="button" className={mode === 'courier' ? 'on' : ''} onClick={() => setMode('courier')}>📮 Courier</button>
+        <fieldset className="sec">
+          <legend><span>1</span> Delivery</legend>
+          <div className="seg">
+            <button type="button" className={mode === 'pickup' ? 'on' : ''} onClick={() => setMode('pickup')}>🤝 Pickup / hand over</button>
+            <button type="button" className={mode === 'courier' ? 'on' : ''} onClick={() => setMode('courier')}>📮 Courier</button>
+          </div>
+          {mode === 'courier' ? <>
+            <label>Delivery location
+              <select value={zone} onChange={e => setZone(Number(e.target.value))}>
+                {courier.map((c, i) => <option key={i} value={i}>{c.name} — {money(c.charge)}</option>)}
+              </select>
+            </label>
+            <label>Full address<textarea required rows={3} value={f.address} onChange={set('address')} autoComplete="street-address" /></label>
+            <div className="two">
+              <label>City<input required value={f.city} onChange={set('city')} /></label>
+              <label>PIN code<input required value={f.pin} onChange={set('pin')} inputMode="numeric" /></label>
+            </div>
+          </> : <p className="muted small" style={{ margin: 0 }}>Collect from us or we hand it over to you. No delivery charge.</p>}
+        </fieldset>
+
+        <fieldset className="sec">
+          <legend><span>2</span> Your details</legend>
+          <label>Name<input required value={f.name} onChange={set('name')} autoComplete="name" /></label>
+          <label>Phone / WhatsApp number<input required value={f.phone} onChange={set('phone')} inputMode="tel" autoComplete="tel" /></label>
+          <label>Note for us (optional)<input value={f.note} onChange={set('note')} /></label>
+        </fieldset>
+
+        <fieldset className="sec">
+          <legend><span>3</span> Gift &amp; offers</legend>
+          <label className="switch gift">
+            <input type="checkbox" checked={gift} onChange={e => setGift(e.target.checked)} />
+            <span>🎁 This is a gift — gift wrap {money(Store.data.settings.giftWrapFee)}</span>
+          </label>
+          {gift && <textarea rows={2} maxLength={300} placeholder="Message for the gift card" value={giftMsg} onChange={e => setGiftMsg(e.target.value)} aria-label="Gift card message" />}
+
+          {REMOTE && user && (applied ? (
+            <div className="coupon applied">
+              <span>🏷️ <b>{applied}</b> applied</span>
+              <button type="button" className="link" onClick={removeCoupon}>Remove</button>
+            </div>
+          ) : (
+            <div className="coupon">
+              <input placeholder="Coupon code" value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); } }} autoCapitalize="characters" aria-label="Coupon code" />
+              <button type="button" className="btn ghost small" disabled={couponBusy || !code.trim()} onClick={applyCoupon}>{couponBusy ? '…' : 'Apply'}</button>
+            </div>
+          ))}
+        </fieldset>
+
+        <div className="bill">
+          <h3>Bill details</h3>
+          <dl className="totals">
+            <div><dt>Items ({lines.reduce((a, l) => a + l.qty, 0)})</dt><dd>{money(subtotal)}</dd></div>
+            {discount > 0 && <div className="disc"><dt>Coupon {applied}</dt><dd>−{money(discount)}</dd></div>}
+            {mode === 'courier' && <div><dt>Courier ({z?.name})</dt><dd>{money(shipping)}</dd></div>}
+            {giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(giftFee)}</dd></div>}
+            <div className="grand"><dt>Total</dt><dd>{money(total)}</dd></div>
+          </dl>
+          {mode === 'courier' && <p className="muted small" style={{ margin: 0 }}>Courier charges depend on your location and are confirmed with you once the order is confirmed.</p>}
         </div>
 
-        <input required placeholder="Your name" value={f.name} onChange={set('name')} autoComplete="name" />
-        <input required placeholder="Phone / WhatsApp number" value={f.phone} onChange={set('phone')} inputMode="tel" autoComplete="tel" />
-
-        {mode === 'courier' && <>
-          <label className="lbl">Delivery location</label>
-          <select value={zone} onChange={e => setZone(Number(e.target.value))}>
-            {courier.map((c, i) => <option key={i} value={i}>{c.name} — {money(c.charge)}</option>)}
-          </select>
-          <textarea required placeholder="Full address" rows={3} value={f.address} onChange={set('address')} autoComplete="street-address" />
-          <div className="two">
-            <input required placeholder="City" value={f.city} onChange={set('city')} />
-            <input required placeholder="PIN code" value={f.pin} onChange={set('pin')} inputMode="numeric" />
-          </div>
-        </>}
-        <input placeholder="Note (optional)" value={f.note} onChange={set('note')} />
-
-        <label className="switch gift">
-          <input type="checkbox" checked={gift} onChange={e => setGift(e.target.checked)} />
-          <span>🎁 This is a gift — gift wrap {money(Store.data.settings.giftWrapFee)}</span>
-        </label>
-        {gift && <textarea rows={2} maxLength={300} placeholder="Message for the gift card" value={giftMsg} onChange={e => setGiftMsg(e.target.value)} />}
-
-        {REMOTE && user && (applied ? (
-          <div className="coupon applied">
-            <span>🏷️ <b>{applied}</b> applied</span>
-            <button type="button" className="link" onClick={removeCoupon}>Remove</button>
-          </div>
-        ) : (
-          <div className="coupon">
-            <input placeholder="Coupon code" value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); } }} autoCapitalize="characters" aria-label="Coupon code" />
-            <button type="button" className="btn ghost small" disabled={couponBusy || !code.trim()} onClick={applyCoupon}>{couponBusy ? '…' : 'Apply'}</button>
-          </div>
-        ))}
-
-        <dl className="totals">
-          <div><dt>Items ({lines.reduce((a, l) => a + l.qty, 0)})</dt><dd>{money(subtotal)}</dd></div>
-          {discount > 0 && <div className="disc"><dt>Coupon {applied}</dt><dd>−{money(discount)}</dd></div>}
-          {mode === 'courier' && <div><dt>Courier ({z?.name})</dt><dd>{money(shipping)}</dd></div>}
-          {giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(giftFee)}</dd></div>}
-          <div className="grand"><dt>Total</dt><dd>{money(total)}</dd></div>
-        </dl>
-        {mode === 'courier' && <p className="muted small">Courier charges depend on your location and will be confirmed with you once the order is confirmed.</p>}
-        {enabled && !user
-          ? <Link className="btn block-btn" to="/login?next=/cart">Sign in with Google to place order</Link>
-          : <button className="btn block-btn" disabled={busy}>{busy ? 'Placing order…' : 'Place order'}</button>}
+        <div className="place-inline">
+          {enabled && !user
+            ? <Link className="btn block-btn" to="/login?next=/cart">Sign in with Google to place order</Link>
+            : <button className="btn block-btn" disabled={busy}>{busy ? 'Placing order…' : 'Place order'}</button>}
+        </div>
       </form>
+
+      <div className="checkout-bar">
+        <div><small>Total</small><b>{money(total)}</b></div>
+        {enabled && !user
+          ? <Link className="btn" to="/login?next=/cart">Sign in to order</Link>
+          : <button type="submit" form="checkout" className="btn" disabled={busy}>{busy ? 'Placing…' : 'Place order'}</button>}
+      </div>
     </div>
   );
 }

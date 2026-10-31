@@ -2,13 +2,13 @@
  * DD_Treasure26 backend: a Google Apps Script web app.
  * Runs as the shop's Google account, keeps all data in the Drive folder
  * "DDTreasure26-Data" (catalog.json, reviews.json, orders.json, coupons.json,
- * images/), and verifies Google sign-in tokens. It sends no email.
+ * backups/, images/), and verifies Google sign-in tokens. It sends no email.
  * Setup: see backend/README.md
  */
 const CLIENT_ID = '566285685011-uok9mas25n93gjm55vmcdk23aq7bpcsg.apps.googleusercontent.com';
 const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
 const SHOP_NAME = 'DD_Treasure26';
-const VERSION = '2026-11-01-options-coupons'; // shown by the ping URL so you can tell which code is live
+const VERSION = '2026-11-01-spam-backup'; // shown by the ping URL so you can tell which code is live
 const FOLDER_NAME = 'DDTreasure26-Data';
 const TZ = 'Asia/Kolkata';
 const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
@@ -89,7 +89,7 @@ function publicData_() {
   return out;
 }
 function publicReview_(r) {
-  return { id: r.id, productId: r.productId || null, name: r.name, rating: r.rating, text: r.text, date: r.date, visible: true };
+  return { id: r.id, productId: r.productId || null, name: r.name, rating: r.rating, text: r.text, date: r.date, verified: !!r.verified, visible: true };
 }
 
 /** Verify a Google ID token and return {email, name}. */
@@ -188,10 +188,73 @@ function couponHold_(o) {
   o.couponReleased = cancelled;
 }
 
+/** Fixed-window rate limit per signed-in account (and action). Throws a friendly error when exceeded. */
+function throttle_(email, name, max, windowSec) {
+  const cache = CacheService.getScriptCache();
+  const key = 'thr:' + name + ':' + email;
+  const now = Date.now();
+  const hit = cache.get(key);
+  let count = 1, start = now;
+  if (hit) {
+    const parts = hit.split('|');
+    start = Number(parts[1]);
+    count = Number(parts[0]) + 1;
+    if (count > max) throw fail_('limit', 'Too many attempts. Please wait a few minutes and try again.');
+  }
+  const ttl = Math.max(1, Math.min(21600, Math.ceil(windowSec - (now - start) / 1000)));
+  cache.put(key, count + '|' + start, ttl);
+}
+
+/** Has this account got a confirmed order (containing the product, when given)? Used to mark reviews as verified. */
+function hasPurchased_(email, productId, orders) {
+  return orders.some(function (o) {
+    return o.userEmail === email && STOCK_STATUSES.indexOf(o.status) >= 0 &&
+      (!productId || o.items.some(function (i) { return i.id === productId; }));
+  });
+}
+
+/** Copies the data files into backups/<date>/ and keeps the newest 30 days. Caller holds the lock. */
+function backup_() {
+  const bk = folder_('backups');
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const same = bk.getFoldersByName(stamp);
+  while (same.hasNext()) same.next().setTrashed(true);
+  const day = bk.createFolder(stamp);
+  [['catalog.json', { updated: 0 }], ['orders.json', []], ['reviews.json', []], ['coupons.json', []]].forEach(function (f) {
+    file_(f[0], f[1]).makeCopy(f[0], day);
+  });
+  const days = [];
+  const it = bk.getFolders();
+  while (it.hasNext()) days.push(it.next());
+  days.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; });
+  days.slice(30).forEach(function (f) { f.setTrashed(true); });
+  const at = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty('LAST_BACKUP', at);
+  return { folder: stamp, at: at };
+}
+/** Target of the daily trigger. */
+function dailyBackup() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try { backup_(); } finally { lock.releaseLock(); }
+}
+/** Run this ONCE from the editor (Run > setupDailyBackup) to switch on the automatic daily backup (about 2 am). */
+function setupDailyBackup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dailyBackup') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(2).inTimezone(TZ).create();
+}
+function autoBackupOn_() {
+  try { return ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'dailyBackup'; }); }
+  catch (e) { return false; }
+}
+
 /* ---------- actions ---------- */
 const ACTIONS = {
   /* customer */
   placeOrder: { auth: true, write: true, run: function (user, b) {
+    throttle_(user.email, 'order', 6, 600);
     const catalog = read_('catalog.json', { updated: 0 });
     const settings = catalog.settings || {};
     const priced = priceItems_(b.items, catalog.products || []);
@@ -219,6 +282,14 @@ const ACTIONS = {
 
     const giftWrap = !!b.giftWrap;
     const orders = read_('orders.json', []);
+    const mine = orders.filter(function (o) { return o.userEmail === user.email; });
+    if (mine.filter(function (o) { return o.status === 'Awaiting payment'; }).length >= 5) {
+      throw fail_('limit', 'You have several unpaid orders. Please pay for or cancel them before placing another.');
+    }
+    const dayAgo = Date.now() - 864e5;
+    if (mine.filter(function (o) { return Date.parse(o.date) > dayAgo; }).length >= 10) {
+      throw fail_('limit', 'You have reached the daily order limit. Please contact us on WhatsApp for bigger orders.');
+    }
     const order = {
       id: nextOrderId_(orders), date: new Date().toISOString(), items: items, subtotal: subtotal,
       discount: discount, coupon: coupon ? { code: coupon.code, discount: discount } : null,
@@ -240,6 +311,7 @@ const ACTIONS = {
   } },
 
   checkCoupon: { auth: true, run: function (user, b) {
+    throttle_(user.email, 'coupon', 15, 600);
     const catalog = read_('catalog.json', { updated: 0 });
     const priced = priceItems_(b.items, catalog.products || []);
     const c = findCoupon_(read_('coupons.json', []), b.code);
@@ -274,22 +346,44 @@ const ACTIONS = {
   } },
 
   addReview: { auth: true, write: true, run: function (user, b) {
+    throttle_(user.email, 'review', 6, 3600);
     const rating = Math.floor(Number(b.rating));
-    const text = str_(b.text, 600);
-    if (!(rating >= 1 && rating <= 5) || !text) throw fail_('bad_request', 'Please add a rating and a few words.');
+    const text = str_(b.text, 600).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    if (!(rating >= 1 && rating <= 5) || text.length < 3) throw fail_('bad_request', 'Please add a rating and a few words.');
+    if (/(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|in|net|org|io|co|me|xyz|shop|store|link)\b)/i.test(text)) throw fail_('bad_request', 'Please write your review without web links.');
     const pid = b.productId ? str_(b.productId, 40) : null;
     const reviews = read_('reviews.json', []);
+    const dayAgo = Date.now() - 864e5;
+    const recent = reviews.filter(function (r) { return r.email === user.email && Date.parse(r.date) > dayAgo; });
     const mine = reviews.filter(function (r) { return r.email === user.email && (r.productId || null) === pid; })[0];
-    const base = { productId: pid, name: str_(b.name, 40) || user.name, rating: rating, text: text, date: new Date().toISOString(), visible: true, email: user.email };
-    if (mine) Object.assign(mine, base); else reviews.unshift(Object.assign({ id: 'r' + Date.now().toString(36) }, base));
+    if (!mine && recent.length >= 6) throw fail_('limit', 'You have written several reviews today. Please try again tomorrow.');
+    if (recent.some(function (r) { return r !== mine && r.text === text; })) throw fail_('limit', 'That looks like a duplicate of a review you already wrote.');
+    const verified = hasPurchased_(user.email, pid, read_('orders.json', []));
+    const base = { productId: pid, name: str_(b.name, 40) || user.name, rating: rating, text: text, date: new Date().toISOString(), email: user.email, verified: verified };
+    let visible, pending;
+    if (mine) { // an edit keeps the admin's decision, except that a pending review is published once the buyer is verified
+      pending = !!mine.pending && !verified;
+      visible = mine.pending && verified ? true : !!mine.visible;
+      Object.assign(mine, base, { visible: visible, pending: pending });
+    } else { // buyers publish immediately; everyone else waits for the admin
+      visible = verified; pending = !verified;
+      reviews.unshift(Object.assign({ id: 'r' + Date.now().toString(36), visible: visible, pending: pending }, base));
+    }
     write_('reviews.json', reviews);
     bust_();
-    return { reviews: reviews.filter(function (r) { return r.visible; }).map(publicReview_) };
+    return { reviews: reviews.filter(function (r) { return r.visible; }).map(publicReview_), pending: pending, verified: verified };
   } },
 
   /* admin */
   adminData: { auth: true, admin: true, run: function () {
-    return { orders: read_('orders.json', []), reviews: read_('reviews.json', []), coupons: read_('coupons.json', []) };
+    return {
+      orders: read_('orders.json', []), reviews: read_('reviews.json', []), coupons: read_('coupons.json', []),
+      lastBackup: PropertiesService.getScriptProperties().getProperty('LAST_BACKUP') || '', autoBackup: autoBackupOn_()
+    };
+  } },
+
+  backupNow: { auth: true, admin: true, write: true, run: function () {
+    return backup_();
   } },
 
   saveCatalog: { auth: true, admin: true, write: true, run: function (user, b) {

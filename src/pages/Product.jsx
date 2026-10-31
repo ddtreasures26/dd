@@ -43,7 +43,7 @@ export default function Product() {
         )}
       </div>
       <div className="meta">
-        <Link to={`/?cat=${encodeURIComponent(p.category)}`} className="muted">{p.category}</Link>
+        <Link to={`/shop?cat=${encodeURIComponent(p.category)}`} className="muted">{p.category}</Link>
         <h1>{p.name}</h1>
         <RatingSummary productId={p.id} />
         <Price p={p} />

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Store, imgUrl } from '../store';
 import { ProductCard } from '../ui';
 
@@ -34,53 +34,50 @@ function Carousel({ banners }) {
   );
 }
 
+const FEATURED = 8;
+
 export default function Home() {
-  const [sp, setSp] = useSearchParams();
+  const [sp] = useSearchParams();
   const nav = useNavigate();
   const { settings, categories, products } = Store.data;
-  const q = (sp.get('q') || '').trim().toLowerCase();
-  const cat = sp.get('cat') || '';
   const open = id => nav(`/product/${id}`);
 
-  const sort = sp.get('sort') || 'newest';
-  const stockOnly = sp.get('stock') === '1';
-  const cmp = {
-    newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.i - b.i,
-    low: (a, b) => Store.price(a.p) - Store.price(b.p),
-    high: (a, b) => Store.price(b.p) - Store.price(a.p),
-    name: (a, b) => a.p.name.localeCompare(b.p.name)
-  }[sort] || (() => 0);
-  const list = products
-    .filter(p =>
-      (!cat || p.category === cat) &&
-      (!stockOnly || p.qty > 0) &&
-      (!q || `${p.name} ${p.category} ${p.description}`.toLowerCase().includes(q)))
-    .map((p, i) => ({ p, i, createdAt: p.createdAt }))
-    .sort(cmp)
-    .map(x => x.p);
-  const offers = products.filter(p => p.offer && p.qty > 0);
+  // old links such as /#/?q=ring or /#/?cat=Rings now live on the Shop page
+  if (sp.get('q') || sp.get('cat')) return <Navigate to={`/shop?${sp.toString()}`} replace />;
+
+  const inStock = products.filter(p => p.qty > 0);
+  const offers = inStock.filter(p => p.offer);
+  const fresh = inStock
+    .filter(p => p.createdAt && Date.now() - p.createdAt < 45 * 864e5)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 8);
   const recent = Store.recent().map(Store.product).filter(Boolean);
-  const filtering = q || cat || stockOnly;
-  const setParam = (k, v) => { const n = new URLSearchParams(sp); v ? n.set(k, v) : n.delete(k); setSp(n); };
-  const setCat = c => { const n = new URLSearchParams(sp); c ? n.set('cat', c) : n.delete('cat'); setSp(n); };
+  const featured = (inStock.length ? inStock : products).slice(0, FEATURED);
 
   return (
     <>
-      {!filtering && <Carousel banners={settings.banners} />}
+      <Carousel banners={settings.banners} />
 
       <section className="chips" aria-label="Categories">
-        <button className={!cat ? 'on' : ''} onClick={() => setCat('')}>All</button>
-        {categories.map(c => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
+        <Link to="/shop" className="on">All</Link>
+        {categories.map(c => <Link key={c} to={`/shop?cat=${encodeURIComponent(c)}`}>{c}</Link>)}
       </section>
 
-      {!filtering && offers.length > 0 && (
+      {fresh.length > 0 && (
+        <section className="block">
+          <div className="row between"><h2>✨ New arrivals</h2><Link to="/shop?sort=newest" className="small">See all</Link></div>
+          <div className="rail">{fresh.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
+        </section>
+      )}
+
+      {offers.length > 0 && (
         <section className="block offer">
-          <h2>🎁 Offer zone</h2>
+          <div className="row between"><h2>🎁 Offer zone</h2><Link to="/shop?offer=1" className="small">See all</Link></div>
           <div className="rail">{offers.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
         </section>
       )}
 
-      {!filtering && recent.length > 0 && (
+      {recent.length > 0 && (
         <section className="block">
           <h2>Recently viewed</h2>
           <div className="rail">{recent.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
@@ -88,25 +85,18 @@ export default function Home() {
       )}
 
       <section className="block">
-        <h2>{q ? `Results for “${sp.get('q')}”` : cat || 'All products'} <small className="muted">({list.length})</small></h2>
-        <div className="toolbar">
-          <label className="sortsel">
-            <span>Sort by</span>
-            <select value={sort} onChange={e => setParam('sort', e.target.value === 'newest' ? '' : e.target.value)}>
-              <option value="newest">Newest first</option>
-              <option value="low">Price: low to high</option>
-              <option value="high">Price: high to low</option>
-              <option value="name">Name: A to Z</option>
-            </select>
-          </label>
-          <button className={`toggle${stockOnly ? ' on' : ''}`} onClick={() => setParam('stock', stockOnly ? '' : '1')} aria-pressed={stockOnly}>In stock only</button>
-        </div>
-        {list.length ? (
-          <div className="grid">{list.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
-        ) : <div className="empty">{Store.status === 'loading' && !products.length ? 'Loading treasures…' : Store.status === 'error' && !products.length ? 'Could not load the shop. Check your connection and refresh.' : 'No products found.'}</div>}
+        <div className="row between"><h2>Our collection</h2><Link to="/shop" className="small">View all</Link></div>
+        {featured.length ? (
+          <>
+            <div className="grid">{featured.map(p => <ProductCard key={p.id} p={p} onOpen={open} />)}</div>
+            <div className="more"><Link className="btn" to="/shop">View all {products.length} products</Link></div>
+          </>
+        ) : (
+          <div className="empty">{Store.status === 'loading' ? 'Loading treasures…' : Store.status === 'error' ? 'Could not load the shop. Check your connection and refresh.' : 'No products yet.'}</div>
+        )}
       </section>
 
-      {!filtering && settings.promoVideo && (
+      {settings.promoVideo && (
         <section className="block">
           <h2>🎬 Watch our story</h2>
           <Video src={settings.promoVideo} />

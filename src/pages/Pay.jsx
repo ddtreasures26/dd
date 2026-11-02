@@ -36,8 +36,10 @@ export default function Pay() {
   const s = Store.data.settings;
   if (!o) return <div className="empty">Order not found. <Link to="/orders">My orders</Link></div>;
 
+  // Personal UPI IDs are often refused ("limit exceeded") when a link pre-fills the amount, so that is opt-in (Admin > Shop details).
   const upi = s.upiId
-    ? `upi://pay?pa=${encodeURIComponent(s.upiId)}&pn=${encodeURIComponent(s.shopName)}&am=${o.total}&cu=INR&tn=${encodeURIComponent(o.id)}`
+    ? `upi://pay?pa=${encodeURIComponent(s.upiId)}&pn=${encodeURIComponent(s.shopName)}&cu=INR` +
+      (s.upiPrefill ? `&am=${Number(o.total).toFixed(2)}&tn=${encodeURIComponent(o.id)}` : '')
     : '';
   const paid = o.status !== 'Awaiting payment';
 
@@ -71,6 +73,7 @@ export default function Pay() {
           {s.upiId && <button className="btn ghost small" onClick={() => copy(s.upiId, 'UPI ID')}><Icon name="copy" size={16} /> {s.upiId}</button>}
           {upi && <a className="btn small" href={upi}>Open UPI app</a>}
         </div>
+        {upi && !s.upiPrefill && <p className="muted small" style={{ margin: 0 }}>Type <b>{money(o.total)}</b> as the amount in your UPI app, and add <b>{o.id}</b> as the note.</p>}
 
         <ol className="steps">
           <li>Pay <b>{money(o.total)}</b> with GPay or any UPI app.</li>

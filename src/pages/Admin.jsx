@@ -350,6 +350,11 @@ function ShopSettings() {
       <label>Instagram link<input value={s.instagram} onChange={set('instagram')} /></label>
       <h2>Payment</h2>
       <label>UPI ID (optional, enables “Open UPI app”)<input value={s.upiId} onChange={set('upiId')} placeholder="name@bank" /></label>
+      <label className="switch">
+        <input type="checkbox" checked={Boolean(s.upiPrefill)} onChange={e => setS({ ...s, upiPrefill: e.target.checked })} />
+        <span>Pre-fill the amount in the UPI app (only for business / merchant UPI IDs)</span>
+      </label>
+      <p className="muted small" style={{ margin: 0 }}>Leave this off for a personal UPI ID: apps often refuse a pre-filled amount with “limit exceeded”. Customers then type the amount themselves or scan the QR.</p>
       <ImageField label="GPay / UPI QR image" value={s.qrImage} onChange={v => setS({ ...s, qrImage: v })} max={700} />
       <h2>Other</h2>
       <label>Show “only N left” when stock is at or below<input type="number" min="1" value={s.lowStockAt} onChange={set('lowStockAt')} /></label>

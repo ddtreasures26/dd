@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { REMOTE, api } from '../api';
 import { Store, fileToDataURL, money, useStore } from '../store';
 import { ADMIN_EMAIL } from '../config';
-import { Stars, notify, toast, waLink, Img } from '../ui';
+import { Stars, notify, toast, waLink, Img, showLoader, withLoader } from '../ui';
 import { GoogleButton, useAuth } from '../auth';
 
 const SECTIONS = [
@@ -19,9 +19,12 @@ const SECTIONS = [
   { k: 'data', label: 'Backup', icon: '💾' }
 ];
 
+/** Save with a loader while it works and a toast when done. Resolves true on success. */
 const save = async scope => {
-  const ok = await Store.commit(scope);
+  const message = scope === 'coupons' ? 'Saving coupons…' : scope === 'reviews' ? 'Saving reviews…' : REMOTE ? 'Saving and publishing to your shop…' : 'Saving…';
+  const ok = await withLoader(message, () => Store.commit(scope));
   toast(ok ? (REMOTE ? 'Saved & published ✓' : 'Saved ✓') : (Store.lastError || 'Storage full – use smaller/fewer images'));
+  return ok;
 };
 
 export default function Admin() {
@@ -77,7 +80,7 @@ export default function Admin() {
   const go = k => { setTab(k); setMore(false); try { sessionStorage.setItem('ddt.admin.tab', k); } catch { /* ignore */ } window.scrollTo(0, 0); };
   const logout = () => { sessionStorage.removeItem('ddt.admin'); setOk(false); auth.signOut(); };
   const orders = REMOTE ? Store.adminOrders : Store.orders();
-  const openOrders = orders.filter(o => o.status === 'Awaiting payment' || o.status === 'Payment sent').length;
+  const openOrders = orders.filter(o => ['Awaiting payment', 'Awaiting confirmation', 'Payment sent'].includes(o.status)).length;
   const pendingReviews = Store.data.reviews.filter(r => r.pending).length;
   const badge = k => (k === 'orders' ? openOrders : k === 'reviews' ? pendingReviews : 0);
   const current = SECTIONS.find(x => x.k === tab);
@@ -204,13 +207,13 @@ function ProductForm({ init, onDone }) {
     setP(x => ({ ...x, images: [...x.images, ...urls] }));
     ev.target.value = '';
   };
-  const submit = ev => {
+  const submit = async ev => {
     ev.preventDefault();
     const clean = { ...p, id: p.id || Store.uid(), createdAt: p.createdAt || Date.now(), options: parseOptions(p.options), price: Number(p.price), offerPrice: Number(p.offerPrice) || 0, qty: Math.max(0, parseInt(p.qty) || 0) };
     if (!clean.images.length) clean.images = [Store.data.settings.logo];
     const list = Store.data.products;
     Store.data.products = list.some(x => x.id === clean.id) ? list.map(x => x.id === clean.id ? clean : x) : [clean, ...list];
-    save(); onDone();
+    if (await save()) onDone();
   };
   return (
     <form className="card form" onSubmit={submit}>
@@ -334,7 +337,7 @@ function ShopSettings() {
   const [s, setS] = useState({ ...Store.data.settings });
   const set = k => e => setS({ ...s, [k]: e.target.value });
   return (
-    <form className="card form" onSubmit={e => { e.preventDefault(); Object.assign(Store.data.settings, s, { lowStockAt: Number(s.lowStockAt) || 10, giftWrapFee: Math.max(0, Number(s.giftWrapFee) || 0) }); save(); }}>
+    <form className="card form" onSubmit={e => { e.preventDefault(); Object.assign(Store.data.settings, s, { lowStockAt: Number(s.lowStockAt) || 10, giftWrapFee: Math.max(0, Number(s.giftWrapFee) || 0), codEnabled: Boolean(s.codEnabled), codFee: Math.max(0, Number(s.codFee) || 0), codMax: Math.max(0, Number(s.codMax) || 0) }); save(); }}>
       <ImageField label="Logo" value={s.logo} onChange={v => setS({ ...s, logo: v || 'assets/logo.png' })} max={512} />
       <label>Shop name<input value={s.shopName} onChange={set('shopName')} /></label>
       <label>Tagline<input value={s.tagline} onChange={set('tagline')} /></label>
@@ -354,7 +357,19 @@ function ShopSettings() {
         <input type="checkbox" checked={Boolean(s.upiPrefill)} onChange={e => setS({ ...s, upiPrefill: e.target.checked })} />
         <span>Pre-fill the amount in the UPI app (only for business / merchant UPI IDs)</span>
       </label>
-      <p className="muted small" style={{ margin: 0 }}>Leave this off for a personal UPI ID: apps often refuse a pre-filled amount with “limit exceeded”. Customers then type the amount themselves or scan the QR.</p>
+      <h3 style={{ marginTop: 8 }}>Cash on delivery</h3>
+      <label className="switch">
+        <input type="checkbox" checked={Boolean(s.codEnabled)} onChange={e => setS({ ...s, codEnabled: e.target.checked })} />
+        <span>Allow cash on delivery (pay at pickup for pickup orders)</span>
+      </label>
+      {s.codEnabled && (
+        <div className="two">
+          <label>Extra COD fee (₹)<input type="number" min="0" value={s.codFee} onChange={set('codFee')} /></label>
+          <label>Largest COD order (₹, 0 = no limit)<input type="number" min="0" value={s.codMax} onChange={set('codMax')} /></label>
+        </div>
+      )}
+      <p className="muted small" style={{ margin: 0 }}>Customers pick it at checkout when it is on. Each customer can have at most three unconfirmed COD orders at a time. Turn it off here at any time.</p>
+      <p className="muted small" style={{ margin: 0 }}>Leave the pre-fill switch above off for a personal UPI ID: apps often refuse a pre-filled amount with “limit exceeded”. Customers then type the amount themselves or scan the QR.</p>
       <ImageField label="GPay / UPI QR image" value={s.qrImage} onChange={v => setS({ ...s, qrImage: v })} max={700} />
       <h2>Other</h2>
       <label>Show “only N left” when stock is at or below<input type="number" min="1" value={s.lowStockAt} onChange={set('lowStockAt')} /></label>
@@ -386,7 +401,7 @@ function Courier() {
 }
 
 /* ---------- Orders ---------- */
-const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
+const STATUSES = ['Awaiting payment', 'Awaiting confirmation', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
 
 function ChargeEditor({ o, onSave }) {
   const [v, setV] = useState(o.courierCharge);
@@ -412,14 +427,15 @@ const statusMessage = o => {
     Shipped: 'Your order has been shipped.',
     Delivered: 'Your order has been delivered. We hope you love it!',
     Cancelled: 'Your order has been cancelled.',
-    'Awaiting payment': 'We are waiting for your payment.'
+    'Awaiting payment': 'We are waiting for your payment.',
+    'Awaiting confirmation': 'We have received your cash-on-delivery order and will confirm it shortly.'
   }[o.status] || '';
   const extra = o.mode === 'courier' ? ` Courier charge ${money(o.courierCharge)}, total ${money(o.total)}.` : ` Total ${money(o.total)}.`;
   return `Hi ${o.customer.name}, this is ${Store.data.settings.shopName} about your order ${o.id}. ${note}${extra}`;
 };
 
 const ORDER_FILTERS = [
-  ['open', 'To do', o => o.status === 'Awaiting payment' || o.status === 'Payment sent'],
+  ['open', 'To do', o => ['Awaiting payment', 'Awaiting confirmation', 'Payment sent'].includes(o.status)],
   ['active', 'In progress', o => o.status === 'Confirmed' || o.status === 'Shipped'],
   ['done', 'Completed', o => o.status === 'Delivered' || o.status === 'Cancelled'],
   ['all', 'All', () => true]
@@ -449,12 +465,12 @@ function AdminOrders() {
   const patch = async (o, p) => {
     if (!REMOTE) {
       Store.setOrders(Store.orders().map(x => x.id !== o.id ? x : {
-        ...x, ...p, ...(p.courierCharge != null ? { total: x.subtotal - (x.discount || 0) + p.courierCharge + (x.giftFee || 0) } : {})
+        ...x, ...p, ...(p.courierCharge != null ? { total: x.subtotal - (x.discount || 0) + p.courierCharge + (x.giftFee || 0) + (x.codFee || 0) } : {})
       }));
       return;
     }
     try {
-      const r = await api.updateOrder(await getToken(), o.id, p);
+      const r = await withLoader('Updating order…', async () => api.updateOrder(await getToken(), o.id, p));
       Store.applyAdminOrder(r.order, r.products);
       toast(p.status === 'Confirmed' ? 'Confirmed – stock updated ✓' : 'Updated ✓');
     } catch (e) { toast(e.message); }
@@ -483,7 +499,7 @@ function AdminOrders() {
         <article className="card order admin-order" key={o.id}>
           <div className="row between">
             <b>{o.id}</b>
-            <span className={`pill ${o.status.replace(/\s/g, '').toLowerCase()}`}>{o.status}</span>
+            <span className="row">{o.payment === 'cod' && <span className="pill">💵 COD</span>}<span className={`pill ${o.status.replace(/\s/g, '').toLowerCase()}`}>{o.status}</span></span>
           </div>
           <div className="row between">
             <small className="muted">{new Date(o.date).toLocaleString()}</small>
@@ -511,6 +527,7 @@ function AdminOrders() {
             {o.discount > 0 && <div className="disc"><dt>Coupon {o.coupon?.code}</dt><dd>−{money(o.discount)}</dd></div>}
             {o.mode === 'courier' && <div><dt>Courier</dt><dd>{money(o.courierCharge)}</dd></div>}
             {o.giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(o.giftFee)}</dd></div>}
+            {o.codFee > 0 && <div><dt>Cash on delivery fee</dt><dd>{money(o.codFee)}</dd></div>}
             <div className="grand"><dt>Total</dt><dd>{money(o.total)}</dd></div>
           </dl>
 
@@ -536,7 +553,7 @@ function AdminOrders() {
 function Analytics() {
   const orders = REMOTE ? Store.adminOrders : Store.orders();
   const sold = orders.filter(o => ['Confirmed', 'Shipped', 'Delivered'].includes(o.status));
-  const open = orders.filter(o => ['Awaiting payment', 'Payment sent'].includes(o.status));
+  const open = orders.filter(o => ['Awaiting payment', 'Awaiting confirmation', 'Payment sent'].includes(o.status));
   const revenue = sold.reduce((a, o) => a + o.total, 0);
   const pending = open.reduce((a, o) => a + o.total, 0);
 
@@ -556,7 +573,7 @@ function Analytics() {
   const customers = Object.keys(byCustomer).length;
   const repeat = Object.values(byCustomer).filter(n => n > 1).length;
 
-  const statusCount = Object.fromEntries(['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map(s => [s, orders.filter(o => o.status === s).length]));
+  const statusCount = Object.fromEntries(['Awaiting payment', 'Awaiting confirmation', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map(s => [s, orders.filter(o => o.status === s).length]));
   const low = Store.data.products.filter(p => p.qty <= Store.data.settings.lowStockAt).sort((a, b) => a.qty - b.qty);
   const all = Store.reviews('all');
   const avg = all.length ? all.reduce((a, r) => a + r.rating, 0) / all.length : 0;
@@ -625,7 +642,7 @@ function Backup() {
   };
   const backupNow = async () => {
     setBusy(true);
-    try { const r = await api.backupNow(await getToken()); Store.setBackup({ last: r.at }); toast('Backed up to Drive ✓'); }
+    try { const r = await withLoader('Backing up to Drive…', async () => api.backupNow(await getToken())); Store.setBackup({ last: r.at }); toast('Backed up to Drive ✓'); }
     catch (e) { toast(e.message); }
     setBusy(false);
   };
@@ -726,7 +743,7 @@ function Coupons() {
 
   const persist = async next => {
     Store.setCoupons(next);
-    const ok = await Store.commit('coupons');
+    const ok = await withLoader('Saving coupons…', () => Store.commit('coupons'));
     toast(ok ? 'Coupons saved ✓' : (Store.lastError || 'Could not save coupons'));
     if (!ok) await Store.loadAdminData().catch(() => {});
   };

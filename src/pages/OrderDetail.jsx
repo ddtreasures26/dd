@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Store, money } from '../store';
 import { useAuth } from '../auth';
-import { Icon, Timeline, toast, waLink, Img } from '../ui';
+import { Icon, Timeline, toast, waLink, Img, withLoader } from '../ui';
 import { orderText } from './Pay';
 import { REMOTE, api } from '../api';
 import { useOrderSync } from '../sync';
@@ -26,6 +26,7 @@ export function OrderSummary({ o }) {
         {o.discount > 0 && <div className="disc"><dt>Coupon {o.coupon?.code}</dt><dd>−{money(o.discount)}</dd></div>}
         {o.mode === 'courier' && <div><dt>Courier ({o.courierZone})</dt><dd>{money(o.courierCharge)}</dd></div>}
         {o.giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(o.giftFee)}</dd></div>}
+        {o.codFee > 0 && <div><dt>Cash on delivery fee</dt><dd>{money(o.codFee)}</dd></div>}
         <div className="grand"><dt>Total</dt><dd>{money(o.total)}</dd></div>
       </dl>
       {o.giftWrap && o.giftMessage && <p className="notice small">🎁 Gift message: “{o.giftMessage}”</p>}
@@ -49,7 +50,7 @@ export default function OrderDetail() {
   const cancel = async () => {
     if (!confirm('Cancel this order?')) return;
     if (REMOTE) {
-      try { Store.upsertOrder((await api.cancelOrder(await getToken(), o.id)).order); }
+      try { Store.upsertOrder((await withLoader('Cancelling order…', async () => api.cancelOrder(await getToken(), o.id))).order); }
       catch (e) { return toast(e.message); }
     } else Store.setOrders(Store.orders().map(x => x.id === o.id ? { ...x, status: 'Cancelled' } : x));
     toast('Order cancelled');
@@ -64,7 +65,13 @@ export default function OrderDetail() {
       </div>
       <small className="muted">Placed {new Date(o.date).toLocaleString()}</small>
 
-      <section className="card"><Timeline status={o.status} /></section>
+      <section className="card"><Timeline status={o.status} payment={o.payment} /></section>
+      {o.payment === 'cod' && (
+        <section className="card cod-note">
+          <b>{o.mode === 'pickup' ? '💵 Pay at pickup' : '💵 Cash on delivery'}</b>
+          <p style={{ margin: '4px 0 0' }}>Please keep <b>{money(o.total)}</b> ready in cash.{o.status === 'Awaiting confirmation' ? ' We will confirm your order shortly.' : ''}</p>
+        </section>
+      )}
       <OrderSummary o={o} />
 
       <section className="card">
@@ -78,10 +85,10 @@ export default function OrderDetail() {
 
       <div className="actions-bar">
         {o.status === 'Awaiting payment' && <Link className="btn" to={`/pay/${o.id}`}>Pay {money(o.total)}</Link>}
-        <a className="btn wa" href={waLink(s.whatsapp, orderText(o, o.status !== 'Awaiting payment'))} target="_blank" rel="noreferrer"><Icon name="chat" size={18} /> WhatsApp us</a>
+        <a className="btn wa" href={waLink(s.whatsapp, orderText(o, o.payment !== 'cod' && o.status !== 'Awaiting payment'))} target="_blank" rel="noreferrer"><Icon name="chat" size={18} /> WhatsApp us</a>
         {o.status !== 'Cancelled' && <Link className="btn ghost" to={`/invoice/${o.id}`}>Invoice</Link>}
         <button className="btn ghost" onClick={() => reorder(o, nav)}>Reorder</button>
-        {o.status === 'Awaiting payment' && <button className="btn ghost danger" onClick={cancel}>Cancel order</button>}
+        {(o.status === 'Awaiting payment' || o.status === 'Awaiting confirmation') && <button className="btn ghost danger" onClick={cancel}>Cancel order</button>}
       </div>
     </div>
   );

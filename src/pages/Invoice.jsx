@@ -22,7 +22,8 @@ export default function Invoice() {
 
   const s = Store.data.settings;
   const c = o.customer;
-  const paid = PAID.includes(o.status);
+  const cod = o.payment === 'cod';
+  const paid = cod ? o.status === 'Delivered' : PAID.includes(o.status);
 
   return (
     <div className="invoice-wrap">
@@ -41,7 +42,7 @@ export default function Invoice() {
             <h2>INVOICE</h2>
             <b>{o.id}</b>
             <small className="muted">{new Date(o.date).toLocaleDateString()}</small>
-            <span className={`pill ${paid ? 'confirmed' : ''}`}>{paid ? 'Paid' : o.status === 'Cancelled' ? 'Cancelled' : 'Payment pending'}</span>
+            <span className={`pill ${paid ? 'confirmed' : ''}`}>{paid ? 'Paid' : o.status === 'Cancelled' ? 'Cancelled' : cod ? 'Cash on delivery' : 'Payment pending'}</span>
           </div>
         </header>
 
@@ -64,6 +65,7 @@ export default function Invoice() {
             {o.discount > 0 && <tr><td colSpan="3" className="r">Coupon {o.coupon?.code}</td><td className="r">−{money(o.discount)}</td></tr>}
             {o.mode === 'courier' && <tr><td colSpan="3" className="r">Courier ({o.courierZone})</td><td className="r">{money(o.courierCharge)}</td></tr>}
             {o.giftFee > 0 && <tr><td colSpan="3" className="r">Gift wrap</td><td className="r">{money(o.giftFee)}</td></tr>}
+            {o.codFee > 0 && <tr><td colSpan="3" className="r">Cash on delivery fee</td><td className="r">{money(o.codFee)}</td></tr>}
             <tr className="grand"><td colSpan="3" className="r">Total</td><td className="r">{money(o.total)}</td></tr>
           </tfoot>
         </table>

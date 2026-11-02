@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Store, useStore } from './store';
-import { Icon, MapBlock, Toast, Img } from './ui';
+import { Icon, MapBlock, Toast, Loader, Img } from './ui';
 import { Avatar, useAuth } from './auth';
 import { REMOTE } from './api';
 import { useOrderSync } from './sync';
@@ -165,8 +165,9 @@ export default function App() {
         ))}
       </nav>}
 
-      <InstallBanner show={!inAdmin && (Boolean(user) || loc.pathname === '/login')} />
+      <InstallBanner show={!/^\/(cart|pay|order|invoice|product|admin)/.test(loc.pathname) && (Boolean(user) || loc.pathname === '/login')} />
       <Toast />
+      <Loader />
     </div>
   );
 }

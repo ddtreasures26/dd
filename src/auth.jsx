@@ -1,10 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ADMIN_EMAIL, AUTH_ENABLED, GOOGLE_CLIENT_ID } from './config';
 import { Store } from './store';
+import { REMOTE, api, onAuthFail } from './api';
 
 const KEY = 'ddt.user.v1';
 const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
+
+const DAY = 864e5;
+// The server issues a 30-day session after one Google sign-in. It is renewed once less than 20 days remain,
+// so anybody who opens the app at least every few weeks stays signed in until they log out.
+const RENEW_BELOW = 20 * DAY;
 
 const readUser = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
 
@@ -36,16 +42,46 @@ export function AuthProvider({ children }) {
   userRef.current = user;
   const waiter = useRef(null);
 
+  const renewing = useRef(false);
+  const persist = useCallback(u => {
+    try { localStorage.setItem(KEY, JSON.stringify(u)); } catch { /* storage full or blocked */ }
+    userRef.current = u;
+    setUser(u);
+  }, []);
+
+  /** Ask the server for a fresh long-lived session, using `proof` (a Google token or a still-valid session). */
+  const startSession = useCallback(async (email, proof) => {
+    if (!REMOTE || renewing.current) return;
+    renewing.current = true;
+    try {
+      const r = await api.session(proof);
+      const cur = readUser();
+      if (cur && cur.email === email) persist({ ...cur, session: { token: r.session, exp: r.exp } });
+    } catch { /* offline or an older backend: the Google token still works for an hour */ }
+    renewing.current = false;
+  }, [persist]);
+
   const handleCredential = useCallback(resp => {
     try {
       const p = decodeJwt(resp.credential);
       if (!p.email_verified) throw new Error('Google email is not verified');
-      const u = { email: p.email.toLowerCase(), name: p.name || p.email, picture: p.picture || '', credential: resp.credential, exp: p.exp * 1000 };
-      localStorage.setItem(KEY, JSON.stringify(u));
-      setUser(u); setError('');
+      const email = p.email.toLowerCase();
+      const prev = readUser();
+      const session = prev && prev.email === email ? prev.session : undefined;
+      persist({ email, name: p.name || p.email, picture: p.picture || '', credential: resp.credential, exp: p.exp * 1000, session });
+      setError('');
       waiter.current?.(resp.credential); waiter.current = null;
+      if (!session || session.exp - Date.now() < RENEW_BELOW) startSession(email, resp.credential);
     } catch (e) { setError(e.message); }
-  }, []);
+  }, [persist, startSession]);
+
+  // the server refused our session (expired, or the secret was reset): forget it so a fresh sign-in can replace it
+  useEffect(() => {
+    onAuthFail(token => {
+      const u = userRef.current;
+      if (u?.session?.token === token) persist({ ...u, session: undefined });
+    });
+  }, [persist]);
 
   // Initialise Google Identity Services once; later the Drive backend verifies `credential` server-side.
   const init = useCallback(async () => {
@@ -65,10 +101,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, [init]);
 
-  /** A valid Google ID token for API calls. Google tokens last ~1 hour, so renew quietly when close to expiry. */
+  /** A token the server accepts: the long-lived session if we have one, else a Google token (renewed quietly if needed). */
   const getToken = useCallback(async () => {
     const u = userRef.current;
     if (!u) throw Object.assign(new Error('Please sign in.'), { code: 'auth' });
+    const s = u.session;
+    if (s && s.exp - Date.now() > 60_000) {
+      if (s.exp - Date.now() < RENEW_BELOW) startSession(u.email, s.token); // renew in the background
+      return s.token;
+    }
     if (u.exp - Date.now() > 90_000) return u.credential;
     const g = await init();
     return new Promise((resolve, reject) => {
@@ -77,7 +118,7 @@ export function AuthProvider({ children }) {
       waiter.current = c => { clearTimeout(t); resolve(c); };
       g.accounts.id.prompt(n => { if (n.isNotDisplayed?.() || n.isSkippedMoment?.()) { clearTimeout(t); fail(); } });
     });
-  }, [init]);
+  }, [init, startSession]);
   useEffect(() => { Store.setTokenGetter(getToken); }, [getToken]);
 
   const value = {

@@ -8,10 +8,11 @@
 const CLIENT_ID = '566285685011-uok9mas25n93gjm55vmcdk23aq7bpcsg.apps.googleusercontent.com';
 const ADMIN_EMAIL = 'ddtreasures26@gmail.com';
 const SHOP_NAME = 'DD_Treasure26';
-const VERSION = '2026-11-01-spam-backup'; // shown by the ping URL so you can tell which code is live
+const VERSION = '2026-11-02-sessions-cod'; // shown by the ping URL so you can tell which code is live
 const FOLDER_NAME = 'DDTreasure26-Data';
 const TZ = 'Asia/Kolkata';
-const STATUSES = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
+const SESSION_DAYS = 30; // how long a login lasts without use; the app renews it while it is being used
+const STATUSES = ['Awaiting payment', 'Awaiting confirmation', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
 const STOCK_STATUSES = ['Confirmed', 'Shipped', 'Delivered']; // statuses that hold stock
 
 /* ---------- entry points ---------- */
@@ -92,9 +93,41 @@ function publicReview_(r) {
   return { id: r.id, productId: r.productId || null, name: r.name, rating: r.rating, text: r.text, date: r.date, verified: !!r.verified, visible: true };
 }
 
-/** Verify a Google ID token and return {email, name}. */
+/* A Google sign-in token only lasts about an hour. After one verified Google sign-in the server hands out its own
+   signed session token (HMAC-SHA256, secret kept in Script Properties) so customers stay signed in for weeks.
+   To sign everybody out at once, delete the SESSION_SECRET script property. */
+function sessionSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('SESSION_SECRET');
+  if (!secret) { secret = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('SESSION_SECRET', secret); }
+  return secret;
+}
+function sign_(text) { return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(text, sessionSecret_())); }
+function safeEqual_(a, b) {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+function makeSession_(user) {
+  const exp = Date.now() + SESSION_DAYS * 864e5;
+  const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: user.email, n: user.name, x: exp }));
+  return { token: 's1.' + body + '.' + sign_('s1.' + body), exp: exp };
+}
+function sessionUser_(token) {
+  const parts = String(token).split('.');
+  if (parts.length !== 3 || !safeEqual_(sign_('s1.' + parts[1]), parts[2])) throw fail_('auth', 'Please sign in again.');
+  let p;
+  try { p = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString()); }
+  catch (e) { throw fail_('auth', 'Please sign in again.'); }
+  if (!p.e || !(p.x > Date.now())) throw fail_('auth', 'Your session expired. Please sign in again.');
+  return { email: String(p.e).toLowerCase(), name: p.n || p.e };
+}
+
+/** Verify a sign-in token (our own session token or a Google ID token) and return {email, name}. */
 function auth_(token) {
   if (!token) throw fail_('auth', 'Please sign in.');
+  if (String(token).indexOf('s1.') === 0) return sessionUser_(token);
   const cache = CacheService.getScriptCache();
   const key = 't' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token)).slice(0, 40);
   const hit = cache.get(key);
@@ -115,7 +148,7 @@ function nextOrderId_(orders) {
   const n = orders.filter(function (o) { return o.id.indexOf(ymd) >= 0; }).length + 1;
   return 'DDT-' + ymd + '-' + ('00' + n).slice(-3);
 }
-function totalOf_(o) { return o.subtotal - (o.discount || 0) + (o.courierCharge || 0) + (o.giftFee || 0); }
+function totalOf_(o) { return o.subtotal - (o.discount || 0) + (o.courierCharge || 0) + (o.giftFee || 0) + (o.codFee || 0); }
 
 /** The option choice for one cart line, checked against the product's option groups. */
 function variantFor_(p, sel) {
@@ -281,8 +314,22 @@ const ACTIONS = {
     }
 
     const giftWrap = !!b.giftWrap;
+    const giftFee = giftWrap ? Math.max(0, Math.round(Number(settings.giftWrapFee) || 0)) : 0;
+    const payment = b.payment === 'cod' ? 'cod' : 'upi';
+    let codFee = 0;
+    if (payment === 'cod') { // cash on delivery is the admin's choice and is re-checked here, never trusted from the browser
+      if (!settings.codEnabled) throw fail_('bad_request', 'Cash on delivery is not available right now. Please pay by UPI.');
+      const codMax = Number(settings.codMax) || 0;
+      if (codMax > 0 && subtotal - discount + charge + giftFee > codMax) {
+        throw fail_('bad_request', 'Cash on delivery is available for orders up to \u20B9' + codMax + '. Please pay by UPI.');
+      }
+      codFee = Math.max(0, Math.round(Number(settings.codFee) || 0));
+    }
     const orders = read_('orders.json', []);
     const mine = orders.filter(function (o) { return o.userEmail === user.email; });
+    if (payment === 'cod' && mine.filter(function (o) { return o.status === 'Awaiting confirmation'; }).length >= 3) {
+      throw fail_('limit', 'You already have cash-on-delivery orders waiting for confirmation. Please wait for us to confirm them.');
+    }
     if (mine.filter(function (o) { return o.status === 'Awaiting payment'; }).length >= 5) {
       throw fail_('limit', 'You have several unpaid orders. Please pay for or cancel them before placing another.');
     }
@@ -290,14 +337,15 @@ const ACTIONS = {
     if (mine.filter(function (o) { return Date.parse(o.date) > dayAgo; }).length >= 10) {
       throw fail_('limit', 'You have reached the daily order limit. Please contact us on WhatsApp for bigger orders.');
     }
+    const startStatus = payment === 'cod' ? 'Awaiting confirmation' : 'Awaiting payment';
     const order = {
       id: nextOrderId_(orders), date: new Date().toISOString(), items: items, subtotal: subtotal,
       discount: discount, coupon: coupon ? { code: coupon.code, discount: discount } : null,
       mode: mode, courierZone: zone, courierCharge: charge,
-      giftWrap: giftWrap, giftFee: giftWrap ? Math.max(0, Math.round(Number(settings.giftWrapFee) || 0)) : 0,
+      giftWrap: giftWrap, giftFee: giftFee, payment: payment, codFee: codFee,
       giftMessage: str_(b.giftMessage, 300),
-      userEmail: user.email, customer: customer, status: 'Awaiting payment', stockDeducted: false,
-      history: [{ status: 'Awaiting payment', at: new Date().toISOString() }]
+      userEmail: user.email, customer: customer, status: startStatus, stockDeducted: false,
+      history: [{ status: startStatus, at: new Date().toISOString() }]
     };
     order.total = totalOf_(order);
     orders.unshift(order);
@@ -319,6 +367,13 @@ const ACTIONS = {
     return { code: c.code, discount: discount, label: couponLabel_(c) };
   } },
 
+  /** Exchange a verified Google sign-in, or a still-valid session, for a fresh long-lived session. */
+  session: { auth: true, run: function (user) {
+    throttle_(user.email, 'session', 20, 3600);
+    const s = makeSession_(user);
+    return { session: s.token, exp: s.exp };
+  } },
+
   myOrders: { auth: true, run: function (user) {
     return { orders: read_('orders.json', []).filter(function (o) { return o.userEmail === user.email; }) };
   } },
@@ -338,7 +393,7 @@ const ACTIONS = {
     const orders = read_('orders.json', []);
     const o = orders.filter(function (x) { return x.id === b.id && x.userEmail === user.email; })[0];
     if (!o) throw fail_('not_found', 'Order not found.');
-    if (o.status !== 'Awaiting payment') throw fail_('bad_request', 'This order can no longer be cancelled here. Please contact us.');
+    if (o.status !== 'Awaiting payment' && o.status !== 'Awaiting confirmation') throw fail_('bad_request', 'This order can no longer be cancelled here. Please contact us.');
     o.status = 'Cancelled'; o.history.push({ status: o.status, at: new Date().toISOString() });
     couponHold_(o);
     write_('orders.json', orders);

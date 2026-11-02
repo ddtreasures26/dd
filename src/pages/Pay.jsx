@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { Store, money } from '../store';
 import { Icon, toast, waLink, Img } from '../ui';
 import { REMOTE, api } from '../api';
@@ -9,13 +9,15 @@ import { OrderSummary } from './OrderDetail';
 export const orderText = (o, paid) => {
   const c = o.customer;
   return [
-    `Hi DD_Treasure26! ${paid ? 'I have paid for' : 'Please confirm'} my order.`,
+    `Hi DD_Treasure26! ${o.payment === 'cod' ? 'Please confirm my cash-on-delivery order.' : paid ? 'I have paid for my order.' : 'Please confirm my order.'}`,
     `Order ID: ${o.id}`,
     ...o.items.map(i => `• ${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.qty} = ${money(i.price * i.qty)}`),
     `Items: ${money(o.subtotal)}`,
     ...(o.discount > 0 ? [`Coupon ${o.coupon?.code}: −${money(o.discount)}`] : []),
     o.mode === 'courier' ? `Courier (${o.courierZone}): ${money(o.courierCharge)} – to be confirmed` : 'Delivery: pickup / hand over',
     ...(o.giftWrap ? [`Gift wrap: ${money(o.giftFee)}${o.giftMessage ? ` — message: "${o.giftMessage}"` : ''}`] : []),
+    ...(o.codFee > 0 ? [`Cash on delivery fee: ${money(o.codFee)}`] : []),
+    ...(o.payment === 'cod' ? ['Payment: cash on delivery'] : []),
     `Total: ${money(o.total)}`,
     `Name: ${c.name}`, `Phone: ${c.phone}`,
     ...(o.mode === 'courier' ? [`Address: ${c.address}, ${c.city} - ${c.pin}`] : []),
@@ -35,6 +37,7 @@ export default function Pay() {
   const o = Store.orders().find(x => x.id === id);
   const s = Store.data.settings;
   if (!o) return <div className="empty">Order not found. <Link to="/orders">My orders</Link></div>;
+  if (o.payment === 'cod') return <Navigate to={`/order/${o.id}`} replace />;
 
   // Personal UPI IDs are often refused ("limit exceeded") when a link pre-fills the amount, so that is opt-in (Admin > Shop details).
   const upi = s.upiId

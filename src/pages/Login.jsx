@@ -35,7 +35,7 @@ export default function Login() {
       )}
       {error && <p className="notice small">{error}</p>}
       <Link className="btn ghost" to={next}>Continue as guest</Link>
-      <small className="muted">We only read your name, email and photo. See our <a href="privacy.html">privacy policy</a>.</small>
+      <small className="muted">You stay signed in on this device until you log out. We only read your name, email and photo. See our <a href="privacy.html">privacy policy</a>.</small>
     </div>
   );
 }

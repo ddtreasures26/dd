@@ -32,6 +32,9 @@ const seed = () => ({
     adminPin: '1234',
     lowStockAt: 10,
     giftWrapFee: 30,
+    codEnabled: false,
+    codFee: 0,
+    codMax: 0,
     banners: [
       { title: 'Handmade with love', text: 'Pearls, charms & little treasures', image: art('💍', '#fde4ea', '#f6c1cf') },
       { title: 'Festive offers', text: 'Up to 20% off on selected sets', image: art('🎀', '#fbe8d3', '#f0c39a') },

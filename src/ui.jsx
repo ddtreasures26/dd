@@ -21,6 +21,44 @@ export function Toast() {
 /** Added to the shop in the last 14 days. */
 export const isNew = p => Boolean(p.createdAt) && Date.now() - p.createdAt < 14 * 864e5;
 
+const loaderBus = new EventTarget();
+let loaderPending = 0;
+const loaderEmit = message => loaderBus.dispatchEvent(new CustomEvent('l', { detail: { pending: loaderPending, message } }));
+
+/** Show the full-screen loader until the returned function is called. It only appears if the work takes over ~0.2 s. */
+export const showLoader = (message = 'Saving…') => {
+  loaderPending++; loaderEmit(message);
+  let done = false;
+  return () => { if (done) return; done = true; loaderPending = Math.max(0, loaderPending - 1); loaderEmit(message); };
+};
+/** Run `fn` while the loader is showing (and always hide it afterwards, even on errors). */
+export async function withLoader(message, fn) {
+  const stop = showLoader(message);
+  try { return await fn(); } finally { stop(); }
+}
+
+export function Loader() {
+  const [st, setSt] = useState({ show: false, message: '' });
+  useEffect(() => {
+    let t;
+    const h = e => {
+      clearTimeout(t);
+      if (e.detail.pending > 0) {
+        setSt(cur => cur.show ? { show: true, message: e.detail.message } : cur);
+        t = setTimeout(() => setSt({ show: true, message: e.detail.message }), 200);
+      } else setSt({ show: false, message: '' });
+    };
+    loaderBus.addEventListener('l', h);
+    return () => { loaderBus.removeEventListener('l', h); clearTimeout(t); };
+  }, []);
+  if (!st.show) return null;
+  return (
+    <div className="loader-overlay" role="alert" aria-busy="true" aria-live="assertive">
+      <div className="loader-card"><span className="spinner" aria-hidden="true" /><b>{st.message}</b><small>Please wait…</small></div>
+    </div>
+  );
+}
+
 export const stockLabel = p => {
   const low = Store.data.settings.lowStockAt;
   if (p.qty <= 0) return { text: 'Sold out', cls: 'out' };
@@ -104,7 +142,7 @@ export function Reviews({ productId = null, productName = '' }) {
     const r = { productId, name: f.name.trim(), rating: f.rating, text: f.text.trim() };
     let pending = false;
     if (REMOTE) {
-      try { const d = await api.addReview(await getToken(), r); Store.setReviews(d.reviews); pending = !!d.pending; }
+      try { const d = await withLoader('Sending your review…', async () => api.addReview(await getToken(), r)); Store.setReviews(d.reviews); pending = !!d.pending; }
       catch (err) { return toast(err.message); }
     } else Store.addReview(r);
     try { localStorage.setItem('ddt.reviewer', r.name); } catch { /* ignore */ }
@@ -184,14 +222,16 @@ export const Icon = ({ name, size = 22 }) => (
 );
 
 export const STEPS = ['Awaiting payment', 'Payment sent', 'Confirmed', 'Shipped', 'Delivered'];
+export const COD_STEPS = ['Awaiting confirmation', 'Confirmed', 'Shipped', 'Delivered'];
 
 /** Order progress tracker. */
-export function Timeline({ status }) {
+export function Timeline({ status, payment }) {
+  const steps = payment === 'cod' ? COD_STEPS : STEPS;
   if (status === 'Cancelled') return <p className="notice small">This order was cancelled.</p>;
-  const at = Math.max(0, STEPS.indexOf(status));
+  const at = Math.max(0, steps.indexOf(status));
   return (
     <ol className="timeline">
-      {STEPS.map((s, i) => (
+      {steps.map((s, i) => (
         <li key={s} className={i < at ? 'done' : i === at ? 'now' : ''}>
           <span className="node">{i < at ? <Icon name="check" size={12} /> : i + 1}</span>
           <small>{s}</small>

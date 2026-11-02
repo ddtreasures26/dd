@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { REMOTE, api } from '../api';
 import { Store, cartKey, money, variantLabel } from '../store';
-import { notify, toast, Img } from '../ui';
+import { notify, toast, Img, withLoader } from '../ui';
 
 export default function Cart() {
   const nav = useNavigate();
@@ -25,6 +25,7 @@ export default function Cart() {
   const [applied, setApplied] = useState(''); // code currently applied
   const [discount, setDiscount] = useState(0);
   const [couponBusy, setCouponBusy] = useState(false);
+  const [payment, setPayment] = useState('upi');
   const [f, setF] = useState(() => ({ name: user?.name || '', note: '', ...Store.profile(user?.email) }));
   const set = k => e => setF({ ...f, [k]: e.target.value });
 
@@ -36,7 +37,13 @@ export default function Cart() {
   const z = courier[zone];
   const shipping = mode === 'courier' && z ? Number(z.charge) : 0;
   const giftFee = gift ? Number(Store.data.settings.giftWrapFee) || 0 : 0;
-  const total = subtotal - discount + shipping + giftFee;
+  const cfg = Store.data.settings;
+  const codMax = Number(cfg.codMax) || 0;
+  const beforeCod = subtotal - discount + shipping + giftFee;
+  const codAllowed = Boolean(cfg.codEnabled) && (!codMax || beforeCod <= codMax);
+  const pay = codAllowed && payment === 'cod' ? 'cod' : 'upi';
+  const codFee = pay === 'cod' ? Math.max(0, Number(cfg.codFee) || 0) : 0;
+  const total = beforeCod + codFee;
   const items = lines.map(l => ({ id: l.id, qty: l.qty, sel: l.sel || {} }));
   const sig = lines.map(l => `${cartKey(l)}x${l.qty}`).join(',');
 
@@ -60,7 +67,7 @@ export default function Cart() {
     if (!c) return;
     setCouponBusy(true);
     try {
-      const r = await api.checkCoupon(await getToken(), items, c);
+      const r = await withLoader('Checking coupon…', async () => api.checkCoupon(await getToken(), items, c));
       setApplied(r.code); setDiscount(r.discount); setCode('');
       toast(`${r.code} applied · ${r.label}`);
     } catch (e) { toast(e.message); }
@@ -79,10 +86,10 @@ export default function Cart() {
     if (REMOTE) {
       setBusy(true);
       try {
-        order = (await api.placeOrder(await getToken(), {
-          items, mode, courierZone, coupon: applied,
+        order = (await withLoader('Placing your order…', async () => api.placeOrder(await getToken(), {
+          items, mode, courierZone, coupon: applied, payment: pay,
           giftWrap: gift, giftMessage: gift ? giftMsg : '', customer
-        })).order;
+        }))).order;
       } catch (err) {
         toast(err.message); Store.refresh(); setBusy(false);
         if (err.code === 'auth') nav('/login?next=/cart');
@@ -94,13 +101,19 @@ export default function Cart() {
       order = {
         id: Store.nextOrderId(), date: new Date().toISOString(),
         items: lines.map(l => ({ id: l.id, name: l.p.name, price: Store.price(l.p), qty: l.qty, sel: l.sel || {}, variant: variantLabel(l.p, l.sel) })),
-        subtotal, discount: 0, coupon: null, mode, courierZone, courierCharge: shipping, giftWrap: gift, giftFee, giftMessage: gift ? giftMsg : '', total,
-        userEmail: user?.email || '', customer, status: 'Awaiting payment'
+        subtotal, discount: 0, coupon: null, mode, courierZone, courierCharge: shipping, giftWrap: gift, giftFee, giftMessage: gift ? giftMsg : '', payment: pay, codFee, total,
+        userEmail: user?.email || '', customer, status: pay === 'cod' ? 'Awaiting confirmation' : 'Awaiting payment'
       };
     }
     Store.setProfile(user?.email, { phone: f.phone, address: f.address, city: f.city, pin: f.pin });
     Store.upsertOrder(order);
     Store.setCart([]);
+    if (order.payment === 'cod') {
+      notify('Order placed', `${order.id} · ${money(order.total)} — we will confirm it shortly.`);
+      toast('Order placed! We will confirm it shortly.');
+      nav(`/order/${order.id}`);
+      return;
+    }
     notify('Order created', `${order.id} · ${money(order.total)} — complete the payment to confirm.`);
     nav(`/pay/${order.id}`);
   };
@@ -192,6 +205,21 @@ export default function Cart() {
           ))}
         </fieldset>
 
+        {cfg.codEnabled && (
+          <fieldset className="sec">
+            <legend><span>4</span> Payment</legend>
+            <div className="payopts" role="radiogroup" aria-label="Payment method">
+              <button type="button" role="radio" aria-checked={pay === 'upi'} className={`payopt${pay === 'upi' ? ' on' : ''}`} onClick={() => setPayment('upi')}>
+                <b>UPI / GPay</b><small>Pay now with the QR, then send us the screenshot</small>
+              </button>
+              <button type="button" role="radio" aria-checked={pay === 'cod'} disabled={!codAllowed} className={`payopt${pay === 'cod' ? ' on' : ''}`} onClick={() => setPayment('cod')}>
+                <b>{mode === 'pickup' ? '💵 Pay at pickup' : '💵 Cash on delivery'}</b>
+                <small>{codAllowed ? `Pay in cash${Number(cfg.codFee) > 0 ? ` · extra ${money(cfg.codFee)}` : ''}` : `Available for orders up to ${money(codMax)}`}</small>
+              </button>
+            </div>
+          </fieldset>
+        )}
+
         <div className="bill">
           <h3>Bill details</h3>
           <dl className="totals">
@@ -199,6 +227,7 @@ export default function Cart() {
             {discount > 0 && <div className="disc"><dt>Coupon {applied}</dt><dd>−{money(discount)}</dd></div>}
             {mode === 'courier' && <div><dt>Courier ({z?.name})</dt><dd>{money(shipping)}</dd></div>}
             {giftFee > 0 && <div><dt>Gift wrap</dt><dd>{money(giftFee)}</dd></div>}
+            {codFee > 0 && <div><dt>Cash on delivery fee</dt><dd>{money(codFee)}</dd></div>}
             <div className="grand"><dt>Total</dt><dd>{money(total)}</dd></div>
           </dl>
           {mode === 'courier' && <p className="muted small" style={{ margin: 0 }}>Courier charges depend on your location and are confirmed with you once the order is confirmed.</p>}

@@ -38,7 +38,7 @@ Every request already needs a verified Google sign-in. On top of that the server
 
 | Action | Limit |
 | --- | --- |
-| Orders | 6 attempts per 10 minutes, at most 5 unpaid orders at once, 10 orders per day |
+| Orders | 6 attempts per 10 minutes, at most 5 unpaid orders at once, 3 unconfirmed cash-on-delivery orders, 10 orders per day |
 | Reviews | 6 attempts per hour, 6 new reviews per day, no web links, no repeating the same text |
 | Coupon codes | 15 tries per 10 minutes (stops code guessing) |
 
@@ -55,6 +55,18 @@ To switch on the **daily** backup (about 2 am India time), once:
 3. Open Admin → Backup. It should say *Daily backup is ON*.
 
 You can also press **Back up to Drive now** in Admin → Backup at any time. To restore, open the dated backup folder in Drive, copy the file you need, and replace the matching file in `DDTreasure26-Data` (or use *Restore from file* in the app for the catalog).
+
+## Staying signed in
+
+Google's own sign-in token only lasts about an hour. After one Google sign-in the server issues its own signed **session token** (valid 30 days, kept in the browser). The app renews it automatically once less than 20 days remain, so anyone who opens the app at least every few weeks stays signed in until they log out. Logging out removes it from that device.
+
+- The signing secret is stored in the script property `SESSION_SECRET` (created automatically). **To sign everybody out at once** (for example if a phone is lost), open Project Settings > Script properties and delete `SESSION_SECRET`; everyone then signs in again.
+- Sessions are checked on the server on every request. Admin actions still require the admin email.
+- On iPhones, Safari clears a website's saved data after about a week without use. Installing the app to the Home Screen avoids that.
+
+## Cash on delivery
+
+The admin switches it on in **Admin > Shop details > Payment** and sets an optional fee and a largest order value. The server checks it again on every order (a customer cannot enable it themselves). COD orders start as **Awaiting confirmation**, show a 4-step tracker, and each customer can have at most three unconfirmed COD orders at a time. Confirming one reduces stock like any other order. **Turn COD on only after you have deployed this version of the script.**
 
 ## Limits to know
 

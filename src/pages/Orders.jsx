@@ -37,7 +37,7 @@ export default function Orders() {
             {o.items.slice(0, 5).map((i, k) => <Img key={k} src={Store.product(i.id)?.images[0] || Store.data.settings.logo} w={120} alt={i.name} title={i.name} />)}
             {o.items.length > 5 && <span className="more">+{o.items.length - 5}</span>}
           </div>
-          <Timeline status={o.status} />
+          <Timeline status={o.status} payment={o.payment} />
           <div className="row between">
             <b className="amt">{money(o.total)}</b>
             <div className="row">
